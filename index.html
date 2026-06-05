@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+#<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -102,7 +102,7 @@ body{background:#0b0f14;color:#e8edf2;font-family:-apple-system,BlinkMacSystemFo
   <div class="sheet">
     <div class="handle"></div>
     <div class="sheet-title" id="modalTitle"></div>
-    <div class="msg-text" id="modalText"></div>
+    <div id="modalBody"><div class="msg-text" id="modalText"></div></div>
     <div class="sbtn-row">
       <button class="sbtn-copy" id="copyBtn" onclick="copyMsg()">Copy</button>
       <button class="sbtn-close" onclick="document.getElementById('modal').style.display='none'">Close</button>
@@ -130,7 +130,8 @@ function athName(a){
 }
 function parentName(a){
   if(!a) return '';
-  return a.parentName||athName(a);
+  const full = a.parentName||athName(a);
+  return full.split(' ')[0];
 }
 
 async function loadData(){
@@ -177,53 +178,125 @@ function getEvs(dk){
   return evs.sort((a,b)=>(a.startTime||'99:99').localeCompare(b.startTime||'99:99'));
 }
 
-function buildConfirm(ev){
-  const athletes=data.athletes||[];
-  if(ev.kind==='group'){
-    const occ=ev.occ,prog=ev.prog;
-    const attending=(occ.attendees||[]).map(id=>athletes.find(a=>a.id===id)).filter(Boolean);
-    if(!attending.length)return'No athletes registered yet.';
-    const ts=occ.startTime?ft(occ.startTime)+(occ.endTime?' - '+ft(occ.endTime):''):'';
-    const loc=[occ.location||prog.location,occ.address||prog.address].filter(Boolean).join(', ');
-    return attending.map(a=>'Hi '+parentName(a)+',\n\nThis is to confirm the participation of '+athName(a)+' in the goalie session on '+fdl(occ.date)+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'.'+(!(occ.paidAttendees||[]).includes(a.id)&&!(occ.pkgAttendees||[]).includes(a.id)&&prog.sessionFee?'\n\nPlease venmo the fee of $'+prog.sessionFee+' to my account @MIZE77 to reserve the time slot.':'')+'\n\nSee you there!\nMIZE').join('\n\n---\n\n');
+// ── Per-athlete message modal ─────────────────────────────────
+let modalEvs = [];  // athletes/targets for current modal
+let modalIdx = 0;   // currently selected athlete index
+let modalType = ''; // 'confirm' | 'invite' | 'coach'
+let modalEvRef = null; // the event
+
+function showAthleteModal(type, ev) {
+  modalType = type;
+  modalEvRef = ev;
+  const athletes = data.athletes||[];
+
+  if(type==='coach') {
+    // Coach message — no athlete selection needed
+    const msg = buildCoach(ev);
+    showMsg('Coach Confirmation', msg);
+    return;
   }
-  if(ev.kind==='private'){
-    const s=ev.session;
-    const a=athletes.find(x=>x.id===s.athleteId);
-    const ts=s.time?ft(s.time)+(s.endTime?' - '+ft(s.endTime):''):'';
-    const loc=[s.poolName,s.poolAddress].filter(Boolean).join(', ');
-    return'Hi '+parentName(a)+',\n\nThis is to confirm the participation of '+athName(a)+' in the '+(s.type||'session')+' on '+fdl(s.date)+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'.'+(!s.paid&&(s.totalFee||s.fee)?'\n\nPlease venmo the fee of $'+(s.totalFee||s.fee)+' to my account @MIZE77 to reserve the time slot.':'')+'\n\nSee you there!\nMIZE';
+
+  if(type==='confirm'||type==='invite') {
+    if(ev.kind==='group') {
+      const occ = ev.occ, prog = ev.prog;
+      if(type==='confirm') {
+        modalEvs = (occ.attendees||[]).map(id=>athletes.find(a=>a.id===id)).filter(Boolean);
+        if(!modalEvs.length){showMsg('Athlete Confirmation','No athletes registered yet.');return;}
+      } else {
+        // invite — athletes NOT attending
+        const attending = new Set(occ.attendees||[]);
+        modalEvs = athletes.filter(a=>a.active!==false&&!attending.has(a.id));
+        if(!modalEvs.length){showMsg('Athlete Invitation','All eligible athletes already registered.');return;}
+      }
+    } else if(ev.kind==='private') {
+      const s = ev.session;
+      const a1 = athletes.find(a=>a.id===s.athleteId);
+      const a2 = s.athlete2Id ? athletes.find(a=>a.id===s.athlete2Id) : null;
+      modalEvs = [a1,a2].filter(Boolean);
+    } else if(ev.kind==='meeting') {
+      const a = athletes.find(x=>x.id===ev.meeting.athleteId);
+      modalEvs = [a].filter(Boolean);
+    }
   }
-  if(ev.kind==='meeting'){
-    const m=ev.meeting,a=athletes.find(x=>x.id===m.athleteId);
-    const tl=m.meetingType==='Other'?m.otherType:m.meetingType;
-    const ts=m.time?ft(m.time):'';
-    return'Hi '+parentName(a)+',\n\nThis is to confirm our '+tl+' on '+fdl(m.date)+(ts?' at '+ts:'')+(m.location?' at '+m.location:'')+'.'+(m.topics?'\n\nTopics:\n'+m.topics.split(/[\n,]+/).map(t=>t.trim()).filter(Boolean).map(t=>'- '+t).join('\n'):'')+(!m.isFree&&m.fee?'\n\nPlease venmo the fee of $'+m.fee+' to my account @MIZE77 to reserve the time slot.':'')+'\n\nBest greetings, MIZE';
-  }
-  return'';
+
+  modalIdx = 0;
+  renderAthleteModal();
+  document.getElementById('modal').style.display='flex';
 }
 
-function buildInvite(ev){
-  const athletes=data.athletes||[];
-  if(ev.kind!=='group')return buildConfirm(ev);
-  const prog=ev.prog,occ=ev.occ;
+function renderAthleteModal() {
+  const a = modalEvs[modalIdx];
+  const title = modalType==='confirm'?'Athlete Confirmation':'Athlete Invitation';
+  const msg = modalType==='confirm' ? buildConfirmForAthlete(a, modalEvRef) : buildInviteForAthlete(a, modalEvRef);
+
+  // Selector tabs if multiple athletes
+  let tabs = '';
+  if(modalEvs.length > 1) {
+    tabs = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'
+      + modalEvs.map((ath,i)=>`<button onclick="selectAthlete(${i})" style="padding:5px 12px;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid;${i===modalIdx?'background:rgba(91,141,238,0.2);border-color:#5b8dee;color:#5b8dee':'background:transparent;border-color:#2a2f3a;color:#666'}">${athName(ath)}</button>`).join('')
+      + '</div>';
+  }
+
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = tabs +
+    '<div class="msg-text" id="modalText">' + escHtml(msg) + '</div>';
+  curMsg = msg;
+  document.getElementById('copyBtn').textContent = 'Copy';
+}
+
+function selectAthlete(idx) {
+  modalIdx = idx;
+  renderAthleteModal();
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function buildConfirmForAthlete(a, ev) {
+  if(!a) return '';
+  const parent = parentName(a), goalie = athName(a);
+  if(ev.kind==='group') {
+    const occ=ev.occ, prog=ev.prog;
+    const ts=occ.startTime?ft(occ.startTime)+(occ.endTime?' - '+ft(occ.endTime):''):'';
+    const loc=[occ.location||prog.location,occ.address||prog.address].filter(Boolean).join(', ');
+    const isPkg=(occ.pkgAttendees||[]).includes(a.id);
+    const isPaid=isPkg||(occ.paidAttendees||[]).includes(a.id);
+    const fee=prog.sessionFee||175;
+    const unpaid=!isPaid?'\n\nPlease venmo the fee of $'+fee+' to my account @MIZE77 to reserve the time slot.':'';
+    return'Hi '+parent+', this is to confirm the participation of '+goalie+' in the goalie session on '+fdl(occ.date)+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'.'+unpaid+'\n\nSee you there!\nMIZE';
+  }
+  if(ev.kind==='private') {
+    const s=ev.session;
+    const ts=s.time?ft(s.time)+(s.endTime?' - '+ft(s.endTime):''):'';
+    const loc=[s.poolName,s.poolAddress].filter(Boolean).join(', ');
+    const unpaid=!s.paid&&(s.totalFee||s.fee)?'\n\nPlease venmo the fee of $'+(s.totalFee||s.fee)+' to my account @MIZE77 to reserve the time slot.':'';
+    return'Hi '+parent+', this is to confirm the participation of '+goalie+' in the '+(s.type||'session')+' on '+fdl(s.date)+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'.'+unpaid+'\n\nSee you there!\nMIZE';
+  }
+  if(ev.kind==='meeting') {
+    const m=ev.meeting;
+    const tl=m.meetingType==='Other'?m.otherType:m.meetingType;
+    const ts=m.time?ft(m.time):'';
+    const unpaid=!m.isFree&&m.fee?'\n\nPlease venmo the fee of $'+m.fee+' to my account @MIZE77 to reserve the time slot.':'';
+    return'Hi '+parent+',\n\nThis is to confirm our '+tl+' on '+fdl(m.date)+(ts?' at '+ts:'')+(m.location?' at '+m.location:'')+'.'+(m.topics?'\n\nTopics:\n'+m.topics.split(/[\n,]+/).map(t=>t.trim()).filter(Boolean).map(t=>'- '+t).join('\n'):'')+unpaid+'\n\nBest greetings, MIZE';
+  }
+  return '';
+}
+
+function buildInviteForAthlete(a, ev) {
+  if(!a||ev.kind!=='group') return buildConfirmForAthlete(a,ev);
+  const prog=ev.prog, occ=ev.occ;
   const ts=occ.startTime?ft(occ.startTime)+(occ.endTime?' - '+ft(occ.endTime):''):'';
   const loc=[occ.location||prog.location,occ.address||prog.address].filter(Boolean).join(', ');
-  const ds=fdl(occ.date);
-  // Build invite for athletes NOT yet attending
-  const attending=new Set(occ.attendees||[]);
-  const targets=athletes.filter(a=>!attending.has(a.id));
-  if(!targets.length)return'All athletes already registered.';
-  return targets.map(a=>{
-    const goalie=athName(a),parent=parentName(a);
-    const hasPkg=a.packageRemaining>0;
-    const fee=prog.sessionFee||175;
-    const feeSection=hasPkg
-      ?'You still have '+a.packageRemaining+' session'+(a.packageRemaining!==1?'s':'')+' left with your Goalie Performance Package. If '+goalie+' would like to join this session please text me to reserve the spot and I will confirm by text if it is still available.'
-      :'If '+goalie+' would like to participate please sign up online at www.theperfectgoalie.com. The fee is $'+fee+' per session.';
-    return'Hi '+parent+', I hope you are doing well. My next '+prog.name+' will be on '+ds+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'. '+feeSection+'\n\nBest greetings, MIZE';
-  }).join('\n\n---\n\n');
+  const goalie=athName(a), parent=parentName(a);
+  const hasPkg=a.packageRemaining>0;
+  const fee=prog.sessionFee||175;
+  const feeSection=hasPkg
+    ?'You still have '+a.packageRemaining+' session'+(a.packageRemaining!==1?'s':'')+' left with your Goalie Performance Package. If '+goalie+' would like to join this session please text me to reserve the spot and I will confirm by text if it is still available.'
+    :'If '+goalie+' would like to participate please sign up online at www.theperfectgoalie.com. The fee is $'+fee+' per session.';
+  return'Hi '+parent+', I hope you are doing well. My next '+prog.name+' will be on '+fdl(occ.date)+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'. '+feeSection+'\n\nBest greetings, MIZE';
 }
+
 
 function buildCoach(ev){
   const coaches=data.coaches||[];
@@ -247,7 +320,8 @@ function showMsg(title,text){
   document.getElementById('modal').style.display='flex';
 }
 function copyMsg(){
-  navigator.clipboard.writeText(curMsg).then(()=>{
+  const txt = document.getElementById('modalText')?.innerText || curMsg;
+  navigator.clipboard.writeText(txt).then(()=>{
     document.getElementById('copyBtn').textContent='Copied!';
     setTimeout(()=>document.getElementById('copyBtn').textContent='Copy',2000);
   });
@@ -291,21 +365,70 @@ function showBriefing(){
 
 window._evs=[];
 
+function mapsUrl(location, address) {
+  const query = encodeURIComponent([location, address].filter(Boolean).join(', '));
+  // Apple Maps URL scheme — opens Maps app on iPhone
+  return `maps://maps.apple.com/?q=${query}`;
+}
+
+function toggleCard(id) {
+  const body = document.getElementById('cb-'+id);
+  const arrow = document.getElementById('ca-'+id);
+  if(!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if(arrow) arrow.textContent = open ? '▼' : '▲';
+}
+
 function ecHTML(ev,idx){
   const ts=ev.startTime?ft(ev.startTime)+(ev.endTime?' - '+ft(ev.endTime):''):'';
   const cn=ev.lc?(ev.lc.nickname||ev.lc.firstname||'Coach'):'MIZE';
   const cb=ev.kind==='group'?'<span class="cbadge">'+ev.count+' athletes</span>':'';
-  const invBtn=ev.kind==='group'?'<button class="mbtn invite" onclick="showMsg(\'Athlete Invitation\',buildInvite(_evs['+idx+']))">Athlete Invitation</button>':'';
+  const invBtn=ev.kind==='group'?'<button class="mbtn invite" onclick="showAthleteModal(\'invite\',_evs['+idx+'])">Athlete Invitation</button>':'';
+  const locLine = ev.location ? `<a href="${mapsUrl(ev.location, ev.address)}" style="color:#5b8dee;text-decoration:none;font-size:12px;display:block;margin-bottom:2px" onclick="event.stopPropagation()">${ev.location}${ev.address?' · '+ev.address:''} ↗</a>` : '';
+  const id = ev.id||('ev'+idx);
+
+  // Extra details for expanded view
+  const athletes = data.athletes||[];
+  let extraDetails = '';
+  if(ev.kind==='group') {
+    const attending = (ev.occ.attendees||[]).map(id=>athletes.find(a=>a.id===id)).filter(Boolean);
+    if(attending.length) extraDetails += '<div style="margin-top:8px"><div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Athletes</div><div style="font-size:12px;color:#aaa">'+attending.map(a=>athName(a)).join(', ')+'</div></div>';
+  }
+  if(ev.kind==='private') {
+    const s=ev.session;
+    extraDetails += '<div style="margin-top:8px;font-size:12px;color:#aaa">';
+    extraDetails += s.type||'Private Session';
+    if(s.length) extraDetails += ' · '+s.length;
+    extraDetails += '</div>';
+    if(s.notes) extraDetails += '<div style="margin-top:6px;font-size:12px;color:#666;font-style:italic">'+s.notes+'</div>';
+  }
+  if(ev.kind==='meeting') {
+    const m=ev.meeting;
+    if(m.topics) extraDetails += '<div style="margin-top:8px"><div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Topics</div><div style="font-size:12px;color:#aaa">'+m.topics+'</div></div>';
+    if(m.notes) extraDetails += '<div style="margin-top:6px;font-size:12px;color:#666;font-style:italic">'+m.notes+'</div>';
+  }
+
   return`<div class="ecard ${ev.kind}">
-  <div class="etype ${ev.kind}">${ev.kind==='group'?'Group Session':ev.kind==='private'?'Private Session':'Meeting'}</div>
-  <div class="ename">${ev.name}${cb}</div>
-  ${ts?`<div class="edetail">${ts}</div>`:''}
-  ${ev.location?`<div class="edetail">${ev.location}${ev.address?' · '+ev.address:''}</div>`:''}
-  <div class="ecoach">Lead: <span class="cpill">${cn}</span></div>
-  <div class="btn-row">
-    <button class="mbtn athlete" onclick="showMsg('Athlete Confirmation',buildConfirm(_evs[${idx}]))">Athlete Confirmation</button>
-    ${invBtn}
-    <button class="mbtn coach" onclick="showMsg('Coach Confirmation',buildCoach(_evs[${idx}]))">Coach Confirmation</button>
+  <div onclick="toggleCard('${id}')" style="cursor:pointer">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between">
+      <div style="flex:1;min-width:0">
+        <div class="etype ${ev.kind}">${ev.kind==='group'?'Group Session':ev.kind==='private'?'Private Session':'Meeting'}</div>
+        <div class="ename">${ev.name}${cb}</div>
+        ${ts?`<div class="edetail">${ts}</div>`:''}
+        ${locLine||( ev.location?`<div class="edetail">${ev.location}${ev.address?' · '+ev.address:''}</div>`:'')}
+      </div>
+      <span id="ca-${id}" style="color:#555;font-size:11px;margin-left:8px;flex-shrink:0;padding-top:2px">▼</span>
+    </div>
+    <div class="ecoach">Lead: <span class="cpill">${cn}</span></div>
+  </div>
+  <div id="cb-${id}" style="display:none">
+    ${extraDetails}
+    <div class="btn-row" style="margin-top:10px">
+      <button class="mbtn athlete" onclick="showAthleteModal('confirm',_evs[${idx}])">Athlete Confirmation</button>
+      ${invBtn}
+      <button class="mbtn coach" onclick="showAthleteModal('coach',_evs[${idx}])">Coach Confirmation</button>
+    </div>
   </div>
 </div>`;
 }
@@ -362,7 +485,7 @@ function renderMatrix(){
 
 function showEvDetail(idx){
   const ev=window._evs[idx];if(!ev)return;
-  showMsg('Athlete Confirmation',buildConfirm(ev));
+  showAthleteModal('confirm',ev);
 }
 
 loadData();
