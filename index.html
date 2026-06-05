@@ -250,16 +250,18 @@ function showAthleteModal(type, ev) {
 // Get best phone number for SMS — parent phone first, then athlete phone
 function getBestPhone(a) {
   if(!a) return '';
-  const p = a.parentPhone || a.parentphone || a.phone || '';
-  return p.replace(/\D/g,''); // strip non-digits
+  // Priority: parent phone first, then athlete phone
+  const raw = a.parentPhone || a.parentphone || a.parentMobile || a.phone || a.mobile || '';
+  return raw.replace(/\D/g,'');
 }
 function getCoachPhone(c) {
   if(!c) return '';
   return (c.phone||'').replace(/\D/g,'');
 }
 function smsUrl(phone, msg) {
-  if(!phone) return null;
-  return 'sms:+1'+phone+'&body='+encodeURIComponent(msg);
+  // Always open Messages — with recipient if phone exists, without if not
+  if(phone) return 'sms:+1'+phone+'&body='+encodeURIComponent(msg);
+  return 'sms:&body='+encodeURIComponent(msg);
 }
 
 function renderAthleteModal() {
@@ -275,11 +277,10 @@ function renderAthleteModal() {
       + '</div>';
   }
 
-  // SMS button
+  // SMS button — always show
   const phone = getBestPhone(a);
-  const smsBtn = phone
-    ? `<a href="${smsUrl(phone, msg)}" style="flex:1;padding:13px;border-radius:10px;background:rgba(0,212,170,0.15);color:#00d4aa;font-size:14px;font-weight:700;border:1px solid rgba(0,212,170,0.3);text-align:center;text-decoration:none;display:block">Open in Messages</a>`
-    : '';
+  const smsLabel = phone ? 'Open in Messages' : 'Open in Messages';
+  const smsBtn = `<a href="${smsUrl(phone, msg)}" style="flex:1;padding:13px;border-radius:10px;background:rgba(0,212,170,0.15);color:#00d4aa;font-size:14px;font-weight:700;border:1px solid rgba(0,212,170,0.3);text-align:center;text-decoration:none;display:block">${smsLabel}</a>`;
 
   document.getElementById('modalTitle').textContent = title;
   document.getElementById('modalBody').innerHTML = tabs +
