@@ -1,4 +1,4 @@
-#<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -103,6 +103,7 @@ body{background:#0b0f14;color:#e8edf2;font-family:-apple-system,BlinkMacSystemFo
     <div class="handle"></div>
     <div class="sheet-title" id="modalTitle"></div>
     <div id="modalBody"><div class="msg-text" id="modalText"></div></div>
+    <div id="smsBtn" style="margin-bottom:8px"></div>
     <div class="sbtn-row">
       <button class="sbtn-copy" id="copyBtn" onclick="copyMsg()">Copy</button>
       <button class="sbtn-close" onclick="document.getElementById('modal').style.display='none'">Close</button>
@@ -158,7 +159,26 @@ function getEvs(dk){
     (prog.dates||[]).forEach(d=>{
       if(sdk(d.date)!==dk)return;
       const lc=coaches.find(c=>c.id===(d.leadCoachId||'mize_master_001'))||coaches.find(c=>c.isDefault)||coaches[0];
-      evs.push({kind:'group',id:d.id,name:prog.name,level:prog.level,startTime:d.startTime||prog.startTime||'',endTime:d.endTime||prog.endTime||'',location:d.location||prog.location||'',address:d.address||prog.address||'',date:d.date,count:(d.attendees||[]).length,prog,occ:d,lc,isRemote:false});
+      const attending = (d.attendees||[]).map(id=>athletes.find(a=>a.id===id)).filter(Boolean);
+      // Sort: regional match first, then HP only if HP session, then alphabetical
+      const isHP = prog.level==='High Performance';
+      const poolRegion = (d.location||prog.location||'').toLowerCase();
+      const regionMatch = a => {
+        const r = (a.region||'').toLowerCase();
+        if(poolRegion.includes('san diego')||poolRegion.includes('mb')||poolRegion.includes('manhattan')) return r.includes('san diego')||r.includes('manhattan');
+        if(poolRegion.includes('huntington')||poolRegion.includes('orange')||poolRegion.includes('hb')) return r.includes('orange')||r.includes('anaheim')||r.includes('huntington');
+        return false;
+      };
+      attending.sort((a,b)=>{
+        const ra=regionMatch(a)?0:1, rb=regionMatch(b)?0:1;
+        if(ra!==rb) return ra-rb;
+        if(isHP){
+          const ha=a.level==='High Performance'?0:1, hb=b.level==='High Performance'?0:1;
+          if(ha!==hb) return ha-hb;
+        }
+        return (athName(a)||'').localeCompare(athName(b)||'');
+      });
+      evs.push({kind:'group',id:d.id,name:prog.name,level:prog.level,startTime:d.startTime||prog.startTime||'',endTime:d.endTime||prog.endTime||'',location:d.location||prog.location||'',address:d.address||prog.address||'',date:d.date,count:attending.length,prog,occ:{...d,_sortedAttendees:attending.map(a=>a.id)},lc,isRemote:false,_attending:attending});
     });
   });
   (data.privateSessions||[]).forEach(s=>{
@@ -190,9 +210,11 @@ function showAthleteModal(type, ev) {
   const athletes = data.athletes||[];
 
   if(type==='coach') {
-    // Coach message — no athlete selection needed
     const msg = buildCoach(ev);
-    showMsg('Coach Confirmation', msg);
+    const coaches = data.coaches||[];
+    const src = ev.occ||ev.session||ev.meeting||{};
+    const lead = coaches.find(c=>c.id===(src.leadCoachId||'mize_master_001'))||coaches.find(c=>c.isDefault)||coaches[0];
+    showMsg('Coach Confirmation', msg, getCoachPhone(lead));
     return;
   }
 
@@ -200,7 +222,7 @@ function showAthleteModal(type, ev) {
     if(ev.kind==='group') {
       const occ = ev.occ, prog = ev.prog;
       if(type==='confirm') {
-        modalEvs = (occ.attendees||[]).map(id=>athletes.find(a=>a.id===id)).filter(Boolean);
+        modalEvs = ev._attending || (ev.occ.attendees||[]).map(id=>athletes.find(a=>a.id===id)).filter(Boolean);
         if(!modalEvs.length){showMsg('Athlete Confirmation','No athletes registered yet.');return;}
       } else {
         // invite — athletes NOT attending
@@ -224,6 +246,21 @@ function showAthleteModal(type, ev) {
   document.getElementById('modal').style.display='flex';
 }
 
+// Get best phone number for SMS — parent phone first, then athlete phone
+function getBestPhone(a) {
+  if(!a) return '';
+  const p = a.parentPhone || a.parentphone || a.phone || '';
+  return p.replace(/\D/g,''); // strip non-digits
+}
+function getCoachPhone(c) {
+  if(!c) return '';
+  return (c.phone||'').replace(/\D/g,'');
+}
+function smsUrl(phone, msg) {
+  if(!phone) return null;
+  return 'sms:+1'+phone+'&body='+encodeURIComponent(msg);
+}
+
 function renderAthleteModal() {
   const a = modalEvs[modalIdx];
   const title = modalType==='confirm'?'Athlete Confirmation':'Athlete Invitation';
@@ -237,9 +274,16 @@ function renderAthleteModal() {
       + '</div>';
   }
 
+  // SMS button
+  const phone = getBestPhone(a);
+  const smsBtn = phone
+    ? `<a href="${smsUrl(phone, msg)}" style="flex:1;padding:13px;border-radius:10px;background:rgba(0,212,170,0.15);color:#00d4aa;font-size:14px;font-weight:700;border:1px solid rgba(0,212,170,0.3);text-align:center;text-decoration:none;display:block">Open in Messages</a>`
+    : '';
+
   document.getElementById('modalTitle').textContent = title;
   document.getElementById('modalBody').innerHTML = tabs +
     '<div class="msg-text" id="modalText">' + escHtml(msg) + '</div>';
+  document.getElementById('smsBtn').innerHTML = smsBtn;
   curMsg = msg;
   document.getElementById('copyBtn').textContent = 'Copy';
 }
@@ -312,12 +356,14 @@ function buildCoach(ev){
   return'Hi '+names+',\n\nThis is to confirm your coaching assignment for the following session:\n\n'+det+pl+'\n\nThank you and see you there!\nMIZE';
 }
 
-function showMsg(title,text){
-  curMsg=text;
-  document.getElementById('modalTitle').textContent=title;
-  document.getElementById('modalText').textContent=text;
-  document.getElementById('copyBtn').textContent='Copy';
-  document.getElementById('modal').style.display='flex';
+function showMsg(title, text, phone) {
+  curMsg = text;
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = '<div class="msg-text" id="modalText">'+escHtml(text)+'</div>';
+  const smsBtn = phone ? `<a href="${smsUrl(phone,text)}" style="flex:1;padding:13px;border-radius:10px;background:rgba(0,212,170,0.15);color:#00d4aa;font-size:14px;font-weight:700;border:1px solid rgba(0,212,170,0.3);text-align:center;text-decoration:none;display:block">Open in Messages</a>` : '';
+  document.getElementById('smsBtn').innerHTML = smsBtn;
+  document.getElementById('copyBtn').textContent = 'Copy';
+  document.getElementById('modal').style.display = 'flex';
 }
 function copyMsg(){
   const txt = document.getElementById('modalText')?.innerText || curMsg;
@@ -392,7 +438,7 @@ function ecHTML(ev,idx){
   const athletes = data.athletes||[];
   let extraDetails = '';
   if(ev.kind==='group') {
-    const attending = (ev.occ.attendees||[]).map(id=>athletes.find(a=>a.id===id)).filter(Boolean);
+    const attending = ev._attending || (ev.occ.attendees||[]).map(id=>athletes.find(a=>a.id===id)).filter(Boolean);
     if(attending.length) extraDetails += '<div style="margin-top:8px"><div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Athletes</div><div style="font-size:12px;color:#aaa">'+attending.map(a=>athName(a)).join(', ')+'</div></div>';
   }
   if(ev.kind==='private') {
