@@ -164,63 +164,52 @@ function render(){if(!data)return;tab==='list'?renderList():renderMatrix();}
 function days7(){const now=new Date(),days=[];for(let i=0;i<7;i++){const d=new Date(now);d.setDate(now.getDate()+i);days.push(d);}return days;}
 function days3(){const now=new Date(),days=[];for(let i=0;i<3;i++){const d=new Date(now);d.setDate(now.getDate()+i);days.push(d);}return days;}
 
+// ── Athlete sorting helpers (global scope) ──────────────────
+const CLUB_REGION = {
+  'newport beach wpc':'oc','set wpc':'oc','vanguard aquatics':'oc','rancho tsunami':'oc',
+  'mission wpc':'oc','corona del mar':'oc','corona del mar wpc':'oc','laguna beach wpc':'oc',
+  'laguna beach hs':'oc','hieland wpc':'oc','hielan wpc':'oc','patriot wpc':'oc',
+  'san clemente wpc':'oc','lake elsinore wpc':'oc','ngen':'oc','southcoast wpc':'oc',
+  'supreme wpc':'oc','908 wpc':'oc','aetos wpc':'oc','socal':'oc','route 66':'oc',
+  'san diego shores':'sd','san diego dons':'sd','del mar wpc':'sd','carlsbad wpc':'sd',
+  'coronado wpc':'sd','la jolla united':'sd','chawp':'sd','olympus aquatics':'sd',
+  'trojan wpc':'mb','rosebowl aquatics':'mb','long beach shore':'mb','long beach vikings':'mb',
+  'palos verdes / torjan wpc':'mb','la premier':'mb','st. joseph hs / long beach shore':'mb',
+  'stanford wpc':'norcal','sacred heart hs / stanford wpc':'norcal',
+};
+
+function sessionRegion(poolStr) {
+  const p = (poolStr||'').toLowerCase();
+  if(p.includes('jake')||p.includes('san diego')||p.includes('coronado')) return 'sd';
+  if(p.includes('mara')||p.includes('manhattan')||p.includes('mb')) return 'mb';
+  if(p.includes('mize')||p.includes('huntington')||p.includes('estancia')||p.includes('golden west')||p.includes('orange')) return 'oc';
+  if(p.includes('harvard westlake')||p.includes('la ')||p.includes('trojan')) return 'mb';
+  return '';
+}
+
+function athleteRegion(a) {
+  const r = (a.region||'').toLowerCase();
+  if(r.includes('san diego')) return 'sd';
+  if(r.includes('manhattan')) return 'mb';
+  if(r.includes('orange')||r.includes('anaheim')||r.includes('huntington')) return 'oc';
+  if(r.includes('norcal')||r.includes('north los')) return 'norcal';
+  const c = (a.club||'').toLowerCase();
+  return CLUB_REGION[c] || '';
+}
+
+function athleteScore(a, sessRegion, isHP) {
+  const ar = athleteRegion(a);
+  const regionMatch = ar && sessRegion && ar === sessRegion;
+  const hpMatch = isHP && a.level === 'High Performance';
+  if(regionMatch && hpMatch) return 0;
+  if(regionMatch) return 1;
+  if(hpMatch) return 2;
+  return 3;
+}
+
 function getEvs(dk){
   const evs=[];
   const athletes=data.athletes||[],coaches=data.coaches||[];
-  // Club → region mapping for proximity matching
-  const CLUB_REGION = {
-    // Orange County
-    'newport beach wpc':'oc','set wpc':'oc','vanguard aquatics':'oc','rancho tsunami':'oc',
-    'mission wpc':'oc','corona del mar':'oc','corona del mar wpc':'oc','laguna beach wpc':'oc',
-    'laguna beach hs':'oc','hieland wpc':'oc','hielan wpc':'oc','patriot wpc':'oc',
-    'san clemente wpc':'oc','lake elsinore wpc':'oc','ngen':'oc','southcoast wpc':'oc',
-    'supreme wpc':'oc','908 wpc':'oc','aetos wpc':'oc','socal':'oc',
-    // San Diego
-    'san diego shores':'sd','san diego dons':'sd','del mar wpc':'sd','carlsbad wpc':'sd',
-    'coronado wpc':'sd','la jolla united':'sd','chawp':'sd','olympus aquatics':'sd',
-    // Manhattan Beach / LA
-    'trojan wpc':'mb','rosebowl aquatics':'mb','long beach shore':'mb','long beach vikings':'mb',
-    'palos verdes / torjan wpc':'mb','la premier':'mb','st. joseph hs / long beach shore':'mb',
-    // NorCal
-    'stanford wpc':'norcal','sacred heart hs / stanford wpc':'norcal',
-    // Route 66 / Inland
-    'route 66':'oc',
-  };
-
-  function sessionRegion(poolStr) {
-    const p = (poolStr||'').toLowerCase();
-    if(p.includes('jake')||p.includes('san diego')||p.includes('coronado')) return 'sd';
-    if(p.includes('mara')||p.includes('manhattan')||p.includes('mb')) return 'mb';
-    if(p.includes('mize')||p.includes('huntington')||p.includes('estancia')||p.includes('golden west')||p.includes('orange')) return 'oc';
-    if(p.includes('harvard westlake')||p.includes('la ')||p.includes('trojan')) return 'mb';
-    return '';
-  }
-
-  function athleteRegion(a) {
-    const r = (a.region||'').toLowerCase();
-    if(r.includes('san diego')) return 'sd';
-    if(r.includes('manhattan')) return 'mb';
-    if(r.includes('orange')||r.includes('anaheim')||r.includes('huntington')) return 'oc';
-    if(r.includes('norcal')||r.includes('north los')) return 'norcal';
-    // Fall back to club
-    const c = (a.club||'').toLowerCase();
-    return CLUB_REGION[c] || '';
-  }
-
-  function athleteScore(a, sessRegion, isHP) {
-    const ar = athleteRegion(a);
-    const regionMatch = ar && sessRegion && ar === sessRegion;
-    const hpMatch = isHP && a.level === 'High Performance';
-    // Tier 0: region match + HP (for HP sessions)
-    if(regionMatch && hpMatch) return 0;
-    // Tier 1: region match only
-    if(regionMatch) return 1;
-    // Tier 2: HP match but wrong region (for HP sessions)
-    if(hpMatch) return 2;
-    // Tier 3: everyone else
-    return 3;
-  }
-
   (data.programs||[]).forEach(prog=>{
     (prog.dates||[]).forEach(d=>{
       if(sdk(d.date)!==dk)return;
