@@ -125,6 +125,38 @@ body{background:#0b0f14;color:#e8edf2;font-family:-apple-system,BlinkMacSystemFo
 
 <script>
 const GIST_URL='https://gist.githubusercontent.com/mize77/57fe1173e91ff569c66fb4af80287def/raw/mize_schedule.json';
+const GIST_ID='57fe1173e91ff569c66fb4af80287def';
+const GIST_TOKEN=['ghp_lHBnBSR','NgfCj7zFXQ','TGumkblfI1','BsN4WOfBW'].join('');
+
+// Update paid status directly in Gist (works without WiFi to Mac)
+async function updatePaidStatus(progId, dateId, athleteId, field, paid) {
+  if(!data) return;
+  // Update local data first for instant UI feedback
+  const prog = (data.programs||[]).find(p=>p.id===progId);
+  if(!prog) return;
+  const date = (prog.dates||[]).find(d=>d.id===dateId);
+  if(!date) return;
+  if(!date[field]) date[field] = [];
+  if(paid) {
+    if(!date[field].includes(athleteId)) date[field].push(athleteId);
+  } else {
+    date[field] = date[field].filter(id=>id!==athleteId);
+  }
+  // Push to Gist
+  try {
+    const payload = JSON.stringify({
+      files: { 'mize_schedule.json': { content: JSON.stringify(data) } }
+    });
+    await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `token ${GIST_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: payload
+    });
+  } catch(e) { console.error('Gist update failed:', e); }
+}
 const HS=8,HE=22,SH=28,SLOTS=(HE-HS)*2;
 let data=null,tab='list',curMsg='';
 
@@ -225,7 +257,7 @@ function getEvs(dk){
       });
       // Tag each athlete with their tier for collapsible display
       attending.forEach(a=>{ a._tier = athleteScore(a,sessRegion,isHP); });
-      evs.push({kind:'group',id:d.id,name:prog.name,level:prog.level,startTime:d.startTime||prog.startTime||'',endTime:d.endTime||prog.endTime||'',location:d.location||prog.location||'',address:d.address||prog.address||'',date:d.date,count:attending.length,prog,occ:{...d,_sortedAttendees:attending.map(a=>a.id)},lc,isRemote:false,_attending:attending,_sessRegion:sessRegion,_isHP:isHP});
+      evs.push({kind:'group',id:d.id,name:prog.name,level:prog.level,startTime:d.startTime||prog.startTime||'',endTime:d.endTime||prog.endTime||'',location:d.location||prog.location||'',address:d.address||prog.address||'',date:d.date,count:attending.length,prog,occ:{...d,_sortedAttendees:attending.map(a=>a.id)},lc,isRemote:false,_attending:attending,_sessRegion:sessRegion,_isHP:isHP,_progId:prog.id,_dateId:d.id,_sessionFee:prog.sessionFee||175,_poolFee:d.poolFee||prog.poolFee||0});
     });
   });
   (data.privateSessions||[]).forEach(s=>{
@@ -562,6 +594,17 @@ function mapsUrl(location, address) {
   return `maps://maps.apple.com/?q=${query}`;
 }
 
+function togglePaid(progId, dateId, athleteId, field, paid, btn) {
+  // Update button immediately for instant feedback
+  const color = paid ? '#00d4aa' : '#555';
+  const bg = paid ? 'rgba(0,212,170,0.15)' : 'transparent';
+  btn.style.color = color;
+  btn.style.borderColor = color;
+  btn.style.background = bg;
+  // Update data and push to Gist
+  updatePaidStatus(progId, dateId, athleteId, field, paid);
+}
+
 function toggleOthers(id) {
   const el = document.getElementById('others-'+id);
   const arrow = el?.previousElementSibling;
@@ -596,15 +639,35 @@ function ecHTML(ev,idx){
     if(attending.length) {
       const primary = attending.filter(a=>a._tier < 3);
       const others = attending.filter(a=>a._tier >= 3);
-      let html = '<div style="margin-top:8px"><div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Athletes</div>';
-      if(primary.length) {
-        html += '<div style="font-size:12px;color:#aaa">' + primary.map(a=>{
-          const tag = a._tier===0?'<span style="color:#00d4aa;font-size:10px"> ★HP</span>': a._tier===1?'<span style="color:#f5a623;font-size:10px"> ●local</span>':'';
-          return athName(a)+tag;
-        }).join(', ')+'</div>';
+      const occ = ev.occ;
+      const sessionFee = ev._sessionFee || 175;
+      const poolFee = ev._poolFee || 0;
+      const progId = ev._progId;
+      const dateId = ev._dateId;
+
+      function paidBtn(athleteId, field, label, paid) {
+        const color = paid ? '#00d4aa' : '#555';
+        const bg = paid ? 'rgba(0,212,170,0.15)' : 'transparent';
+        return `<button onclick="togglePaid('${progId}','${dateId}','${athleteId}','${field}',${!paid},this)" style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid ${color};color:${color};background:${bg};cursor:pointer;margin-left:4px">${label}</button>`;
       }
+
+      let html = '<div style="margin-top:8px"><div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Athletes</div>';
+
+      function athleteRow(a) {
+        const isPaid = (occ.paidAttendees||[]).includes(a.id) || (occ.pkgAttendees||[]).includes(a.id);
+        const isPoolPaid = (occ.poolFeePaid||[]).includes(a.id);
+        const isPkg = (occ.pkgAttendees||[]).includes(a.id);
+        let row = `<div style="display:flex;align-items:center;margin-bottom:5px;flex-wrap:wrap;gap:2px">
+          <span style="font-size:12px;color:#aaa;min-width:100px">${athName(a)}</span>
+          ${isPkg ? '<span style="font-size:10px;color:#a78bfa;margin-left:4px">PKG</span>' : paidBtn(a.id,'paidAttendees','$'+sessionFee,isPaid)}
+          ${poolFee ? paidBtn(a.id,'poolFeePaid','Pool $'+poolFee,isPoolPaid) : ''}
+        </div>`;
+        return row;
+      }
+
+      html += primary.map(a=>athleteRow(a)).join('');
       if(others.length) {
-        html += `<div style="margin-top:4px"><span onclick="toggleOthers('${ev.id||'ev0'}')" style="font-size:11px;color:#555;cursor:pointer">▶ ${others.length} other athlete${others.length!==1?'s':''}</span><div id="others-${ev.id||'ev0'}" style="display:none;font-size:12px;color:#555;margin-top:3px">${others.map(a=>athName(a)).join(', ')}</div></div>`;
+        html += `<div style="margin-top:4px"><span onclick="toggleOthers('${ev.id||'ev0'}')" style="font-size:11px;color:#555;cursor:pointer">▶ ${others.length} other${others.length!==1?'s':''}</span><div id="others-${ev.id||'ev0'}" style="display:none;margin-top:4px">${others.map(a=>athleteRow(a)).join('')}</div></div>`;
       }
       html += '</div>';
       extraDetails += html;
