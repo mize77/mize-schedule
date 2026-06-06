@@ -323,18 +323,43 @@ function renderAthleteModal() {
   const title = modalType==='confirm'?'Athlete Confirmation':'Athlete Invitation';
   const msg = modalType==='confirm' ? buildConfirmForAthlete(a, modalEvRef) : buildInviteForAthlete(a, modalEvRef);
 
-  // Selector tabs if multiple athletes
+  // Split into primary (tiers 0-2) and others (tier 3)
+  const primary = modalEvs.filter(ath => (ath._tier||0) < 3);
+  const others  = modalEvs.filter(ath => (ath._tier||0) >= 3);
+
+  // Build tabs
   let tabs = '';
   if(modalEvs.length > 1) {
-    tabs = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'
-      + modalEvs.map((ath,i)=>`<button onclick="selectAthlete(${i})" style="padding:5px 12px;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid;${i===modalIdx?'background:rgba(91,141,238,0.2);border-color:#5b8dee;color:#5b8dee':'background:transparent;border-color:#2a2f3a;color:#666'}">${athName(ath)}</button>`).join('')
+    // Primary tabs
+    tabs = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
+      + primary.map((ath,i)=>{
+          const gi = modalEvs.indexOf(ath);
+          const active = gi===modalIdx;
+          return `<button onclick="selectAthlete(${gi})" style="padding:5px 12px;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid;${active?'background:rgba(91,141,238,0.2);border-color:#5b8dee;color:#5b8dee':'background:transparent;border-color:#2a2f3a;color:#aaa'}">${athName(ath)}</button>`;
+        }).join('')
       + '</div>';
+
+    // Others collapsible
+    if(others.length) {
+      const anyOtherSelected = others.some(ath => modalEvs.indexOf(ath) === modalIdx);
+      tabs += `<div style="margin-bottom:8px">
+        <button onclick="toggleModalOthers()" id="modalOthersToggle" style="font-size:11px;color:#555;background:transparent;border:none;cursor:pointer;padding:0">
+          ${anyOtherSelected?'▼':'▶'} ${others.length} other athlete${others.length!==1?'s':''}
+        </button>
+        <div id="modalOthers" style="display:${anyOtherSelected?'flex':'none'};gap:6px;flex-wrap:wrap;margin-top:6px">
+          ${others.map(ath=>{
+            const gi = modalEvs.indexOf(ath);
+            const active = gi===modalIdx;
+            return `<button onclick="selectAthlete(${gi})" style="padding:5px 12px;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid;${active?'background:rgba(91,141,238,0.2);border-color:#5b8dee;color:#5b8dee':'background:transparent;border-color:#2a2f3a;color:#555'}">${athName(ath)}</button>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }
   }
 
   // SMS button — always show
   const phone = getBestPhone(a);
-  const smsLabel = phone ? 'Open in Messages' : 'Open in Messages';
-  const smsBtn = `<a href="${smsUrl(phone, msg)}" style="flex:1;padding:13px;border-radius:10px;background:rgba(0,212,170,0.15);color:#00d4aa;font-size:14px;font-weight:700;border:1px solid rgba(0,212,170,0.3);text-align:center;text-decoration:none;display:block">${smsLabel}</a>`;
+  const smsBtn = `<a href="${smsUrl(phone, msg)}" style="flex:1;padding:13px;border-radius:10px;background:rgba(0,212,170,0.15);color:#00d4aa;font-size:14px;font-weight:700;border:1px solid rgba(0,212,170,0.3);text-align:center;text-decoration:none;display:block">Open in Messages</a>`;
 
   document.getElementById('modalTitle').textContent = title;
   document.getElementById('modalBody').innerHTML = tabs +
@@ -342,6 +367,15 @@ function renderAthleteModal() {
   document.getElementById('smsBtn').innerHTML = smsBtn;
   curMsg = msg;
   document.getElementById('copyBtn').textContent = 'Copy';
+}
+
+function toggleModalOthers() {
+  const el = document.getElementById('modalOthers');
+  const btn = document.getElementById('modalOthersToggle');
+  if(!el) return;
+  const open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : 'flex';
+  if(btn) btn.textContent = btn.textContent.replace(open?'▼':'▶', open?'▶':'▼');
 }
 
 function selectAthlete(idx) {
