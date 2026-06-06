@@ -299,6 +299,13 @@ function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+function poolNote(locationStr) {
+  const loc = (locationStr||'').toLowerCase();
+  if(loc.includes('jake')) return " There is an additional fee of $20 for the host of the pool that you can pay directly to me by Venmo to @MIZE77.";
+  if(loc.includes('mara')) return "\n\n- Park on 35th St (by citrus trees)\n- There is a gate into the pool area that may be open - if not, the code is 1972\n";
+  return '';
+}
+
 function buildConfirmForAthlete(a, ev) {
   if(!a) return '';
   const parent = parentName(a), goalie = athName(a);
@@ -310,14 +317,16 @@ function buildConfirmForAthlete(a, ev) {
     const isPaid=isPkg||(occ.paidAttendees||[]).includes(a.id);
     const fee=prog.sessionFee||175;
     const unpaid=!isPaid?'\n\nPlease venmo the fee of $'+fee+' to my account @MIZE77 to reserve the time slot.':'';
-    return'Hi '+parent+', this is to confirm the participation of '+goalie+' in the goalie session on '+fdl(occ.date)+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'.'+unpaid+'\n\nSee you there!\nMIZE';
+    const pNote=poolNote(occ.location||prog.location);
+    return'Hi '+parent+', this is to confirm the participation of '+goalie+' in the goalie session on '+fdl(occ.date)+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'.'+pNote+unpaid+'\n\nSee you there!\nMIZE';
   }
   if(ev.kind==='private') {
     const s=ev.session;
     const ts=s.time?ft(s.time)+(s.endTime?' - '+ft(s.endTime):''):'';
     const loc=[s.poolName,s.poolAddress].filter(Boolean).join(', ');
     const unpaid=!s.paid&&(s.totalFee||s.fee)?'\n\nPlease venmo the fee of $'+(s.totalFee||s.fee)+' to my account @MIZE77 to reserve the time slot.':'';
-    return'Hi '+parent+', this is to confirm the participation of '+goalie+' in the '+(s.type||'session')+' on '+fdl(s.date)+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'.'+unpaid+'\n\nSee you there!\nMIZE';
+    const pNote=poolNote(s.poolName);
+    return'Hi '+parent+', this is to confirm the participation of '+goalie+' in the '+(s.type||'session')+' on '+fdl(s.date)+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'.'+pNote+unpaid+'\n\nSee you there!\nMIZE';
   }
   if(ev.kind==='meeting') {
     const m=ev.meeting;
@@ -340,7 +349,8 @@ function buildInviteForAthlete(a, ev) {
   const feeSection=hasPkg
     ?'You still have '+a.packageRemaining+' session'+(a.packageRemaining!==1?'s':'')+' left with your Goalie Performance Package. If '+goalie+' would like to join this session please text me to reserve the spot and I will confirm by text if it is still available.'
     :'If '+goalie+' would like to participate please sign up online at www.theperfectgoalie.com. The fee is $'+fee+' per session.';
-  return'Hi '+parent+', I hope you are doing well. My next '+prog.name+' will be on '+fdl(occ.date)+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'. '+feeSection+'\n\nBest greetings, MIZE';
+  const pNote=poolNote(occ.location||prog.location);
+  return'Hi '+parent+', I hope you are doing well. My next '+prog.name+' will be on '+fdl(occ.date)+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'. '+feeSection+pNote+'\n\nBest greetings, MIZE';
 }
 
 
