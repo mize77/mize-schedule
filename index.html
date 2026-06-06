@@ -177,7 +177,35 @@ function parentName(a){
 async function loadData(){
   try{
     const r=await fetch(GIST_URL+'?t='+Date.now());
-    data=await r.json();
+    const fresh=await r.json();
+    // Preserve any paid status changes made locally this session
+    if(data) {
+      // Merge group session paid status
+      (data.programs||[]).forEach(lProg=>{
+        const fProg=(fresh.programs||[]).find(p=>p.id===lProg.id);
+        if(!fProg) return;
+        (lProg.dates||[]).forEach(lDate=>{
+          const fDate=(fProg.dates||[]).find(d=>d.id===lDate.id);
+          if(!fDate) return;
+          if(lDate.paidAttendees?.length > (fDate.paidAttendees?.length||0)) fDate.paidAttendees=lDate.paidAttendees;
+          if(lDate.poolFeePaid?.length > (fDate.poolFeePaid?.length||0)) fDate.poolFeePaid=lDate.poolFeePaid;
+        });
+      });
+      // Merge private session paid status
+      (data.privateSessions||[]).forEach(lS=>{
+        const fS=(fresh.privateSessions||[]).find(s=>s.id===lS.id);
+        if(!fS) return;
+        if(lS.paid===true) fS.paid=true;
+        if(lS.paid2===true) fS.paid2=true;
+      });
+      // Merge meeting paid status
+      (data.meetings||[]).forEach(lM=>{
+        const fM=(fresh.meetings||[]).find(m=>m.id===lM.id);
+        if(!fM) return;
+        if(lM.paid===true) { fM.paid=true; fM.paymentStatus='paid'; }
+      });
+    }
+    data=fresh;
     document.getElementById('last-upd').textContent='Updated '+new Date(data.savedAt||Date.now()).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
     render();
   }catch(e){
