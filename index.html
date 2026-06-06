@@ -167,30 +167,76 @@ function days3(){const now=new Date(),days=[];for(let i=0;i<3;i++){const d=new D
 function getEvs(dk){
   const evs=[];
   const athletes=data.athletes||[],coaches=data.coaches||[];
+  // Club → region mapping for proximity matching
+  const CLUB_REGION = {
+    // Orange County
+    'newport beach wpc':'oc','set wpc':'oc','vanguard aquatics':'oc','rancho tsunami':'oc',
+    'mission wpc':'oc','corona del mar':'oc','corona del mar wpc':'oc','laguna beach wpc':'oc',
+    'laguna beach hs':'oc','hieland wpc':'oc','hielan wpc':'oc','patriot wpc':'oc',
+    'san clemente wpc':'oc','lake elsinore wpc':'oc','ngen':'oc','southcoast wpc':'oc',
+    'supreme wpc':'oc','908 wpc':'oc','aetos wpc':'oc','socal':'oc',
+    // San Diego
+    'san diego shores':'sd','san diego dons':'sd','del mar wpc':'sd','carlsbad wpc':'sd',
+    'coronado wpc':'sd','la jolla united':'sd','chawp':'sd','olympus aquatics':'sd',
+    // Manhattan Beach / LA
+    'trojan wpc':'mb','rosebowl aquatics':'mb','long beach shore':'mb','long beach vikings':'mb',
+    'palos verdes / torjan wpc':'mb','la premier':'mb','st. joseph hs / long beach shore':'mb',
+    // NorCal
+    'stanford wpc':'norcal','sacred heart hs / stanford wpc':'norcal',
+    // Route 66 / Inland
+    'route 66':'oc',
+  };
+
+  function sessionRegion(poolStr) {
+    const p = (poolStr||'').toLowerCase();
+    if(p.includes('jake')||p.includes('san diego')||p.includes('coronado')) return 'sd';
+    if(p.includes('mara')||p.includes('manhattan')||p.includes('mb')) return 'mb';
+    if(p.includes('mize')||p.includes('huntington')||p.includes('estancia')||p.includes('golden west')||p.includes('orange')) return 'oc';
+    if(p.includes('harvard westlake')||p.includes('la ')||p.includes('trojan')) return 'mb';
+    return '';
+  }
+
+  function athleteRegion(a) {
+    const r = (a.region||'').toLowerCase();
+    if(r.includes('san diego')) return 'sd';
+    if(r.includes('manhattan')) return 'mb';
+    if(r.includes('orange')||r.includes('anaheim')||r.includes('huntington')) return 'oc';
+    if(r.includes('norcal')||r.includes('north los')) return 'norcal';
+    // Fall back to club
+    const c = (a.club||'').toLowerCase();
+    return CLUB_REGION[c] || '';
+  }
+
+  function athleteScore(a, sessRegion, isHP) {
+    const ar = athleteRegion(a);
+    const regionMatch = ar && sessRegion && ar === sessRegion;
+    const hpMatch = isHP && a.level === 'High Performance';
+    // Tier 0: region match + HP (for HP sessions)
+    if(regionMatch && hpMatch) return 0;
+    // Tier 1: region match only
+    if(regionMatch) return 1;
+    // Tier 2: HP match but wrong region (for HP sessions)
+    if(hpMatch) return 2;
+    // Tier 3: everyone else
+    return 3;
+  }
+
   (data.programs||[]).forEach(prog=>{
     (prog.dates||[]).forEach(d=>{
       if(sdk(d.date)!==dk)return;
       const lc=coaches.find(c=>c.id===(d.leadCoachId||'mize_master_001'))||coaches.find(c=>c.isDefault)||coaches[0];
       const attending = (d.attendees||[]).map(id=>athletes.find(a=>a.id===id)).filter(Boolean);
-      // Sort: regional match first, then HP only if HP session, then alphabetical
       const isHP = prog.level==='High Performance';
-      const poolRegion = (d.location||prog.location||'').toLowerCase();
-      const regionMatch = a => {
-        const r = (a.region||'').toLowerCase();
-        if(poolRegion.includes('san diego')||poolRegion.includes('mb')||poolRegion.includes('manhattan')) return r.includes('san diego')||r.includes('manhattan');
-        if(poolRegion.includes('huntington')||poolRegion.includes('orange')||poolRegion.includes('hb')) return r.includes('orange')||r.includes('anaheim')||r.includes('huntington');
-        return false;
-      };
+      const poolStr = d.location||prog.location||'';
+      const sessRegion = sessionRegion(poolStr);
       attending.sort((a,b)=>{
-        const ra=regionMatch(a)?0:1, rb=regionMatch(b)?0:1;
-        if(ra!==rb) return ra-rb;
-        if(isHP){
-          const ha=a.level==='High Performance'?0:1, hb=b.level==='High Performance'?0:1;
-          if(ha!==hb) return ha-hb;
-        }
+        const sa=athleteScore(a,sessRegion,isHP), sb=athleteScore(b,sessRegion,isHP);
+        if(sa!==sb) return sa-sb;
         return (athName(a)||'').localeCompare(athName(b)||'');
       });
-      evs.push({kind:'group',id:d.id,name:prog.name,level:prog.level,startTime:d.startTime||prog.startTime||'',endTime:d.endTime||prog.endTime||'',location:d.location||prog.location||'',address:d.address||prog.address||'',date:d.date,count:attending.length,prog,occ:{...d,_sortedAttendees:attending.map(a=>a.id)},lc,isRemote:false,_attending:attending});
+      // Tag each athlete with their tier for collapsible display
+      attending.forEach(a=>{ a._tier = athleteScore(a,sessRegion,isHP); });
+      evs.push({kind:'group',id:d.id,name:prog.name,level:prog.level,startTime:d.startTime||prog.startTime||'',endTime:d.endTime||prog.endTime||'',location:d.location||prog.location||'',address:d.address||prog.address||'',date:d.date,count:attending.length,prog,occ:{...d,_sortedAttendees:attending.map(a=>a.id)},lc,isRemote:false,_attending:attending,_sessRegion:sessRegion,_isHP:isHP});
     });
   });
   (data.privateSessions||[]).forEach(s=>{
@@ -237,9 +283,17 @@ function showAthleteModal(type, ev) {
         modalEvs = ev._attending || (ev.occ.attendees||[]).map(id=>athletes.find(a=>a.id===id)).filter(Boolean);
         if(!modalEvs.length){showMsg('Athlete Confirmation','No athletes registered yet.');return;}
       } else {
-        // invite — athletes NOT attending
+        // invite — athletes NOT attending, sorted by tier
         const attending = new Set(occ.attendees||[]);
-        modalEvs = athletes.filter(a=>a.active!==false&&!attending.has(a.id));
+        const candidates = athletes.filter(a=>a.active!==false&&!attending.has(a.id));
+        const sessRegion = ev._sessRegion||'';
+        const isHP2 = ev._isHP||false;
+        candidates.sort((a,b)=>{
+          const sa=athleteScore(a,sessRegion,isHP2), sb=athleteScore(b,sessRegion,isHP2);
+          if(sa!==sb) return sa-sb;
+          return (athName(a)||'').localeCompare(athName(b)||'');
+        });
+        modalEvs = candidates;
         if(!modalEvs.length){showMsg('Athlete Invitation','All eligible athletes already registered.');return;}
       }
     } else if(ev.kind==='private') {
@@ -440,6 +494,15 @@ function mapsUrl(location, address) {
   return `maps://maps.apple.com/?q=${query}`;
 }
 
+function toggleOthers(id) {
+  const el = document.getElementById('others-'+id);
+  const arrow = el?.previousElementSibling;
+  if(!el) return;
+  const open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : 'block';
+  if(arrow) arrow.textContent = (open ? '▶' : '▼') + arrow.textContent.slice(1);
+}
+
 function toggleCard(id) {
   const body = document.getElementById('cb-'+id);
   const arrow = document.getElementById('ca-'+id);
@@ -462,7 +525,22 @@ function ecHTML(ev,idx){
   let extraDetails = '';
   if(ev.kind==='group') {
     const attending = ev._attending || (ev.occ.attendees||[]).map(id=>athletes.find(a=>a.id===id)).filter(Boolean);
-    if(attending.length) extraDetails += '<div style="margin-top:8px"><div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Athletes</div><div style="font-size:12px;color:#aaa">'+attending.map(a=>athName(a)).join(', ')+'</div></div>';
+    if(attending.length) {
+      const primary = attending.filter(a=>a._tier < 3);
+      const others = attending.filter(a=>a._tier >= 3);
+      let html = '<div style="margin-top:8px"><div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Athletes</div>';
+      if(primary.length) {
+        html += '<div style="font-size:12px;color:#aaa">' + primary.map(a=>{
+          const tag = a._tier===0?'<span style="color:#00d4aa;font-size:10px"> ★HP</span>': a._tier===1?'<span style="color:#f5a623;font-size:10px"> ●local</span>':'';
+          return athName(a)+tag;
+        }).join(', ')+'</div>';
+      }
+      if(others.length) {
+        html += `<div style="margin-top:4px"><span onclick="toggleOthers('${ev.id||'ev0'}')" style="font-size:11px;color:#555;cursor:pointer">▶ ${others.length} other athlete${others.length!==1?'s':''}</span><div id="others-${ev.id||'ev0'}" style="display:none;font-size:12px;color:#555;margin-top:3px">${others.map(a=>athName(a)).join(', ')}</div></div>`;
+      }
+      html += '</div>';
+      extraDetails += html;
+    }
   }
   if(ev.kind==='private') {
     const s=ev.session;
