@@ -131,7 +131,6 @@ const GIST_TOKEN=['ghp_lHBnBSR','NgfCj7zFXQ','TGumkblfI1','BsN4WOfBW'].join('');
 // Update paid status directly in Gist (works without WiFi to Mac)
 async function updatePaidStatus(progId, dateId, athleteId, field, paid) {
   if(!data) return;
-  // Update local data first for instant UI feedback
   const prog = (data.programs||[]).find(p=>p.id===progId);
   if(!prog) return;
   const date = (prog.dates||[]).find(d=>d.id===dateId);
@@ -142,20 +141,7 @@ async function updatePaidStatus(progId, dateId, athleteId, field, paid) {
   } else {
     date[field] = date[field].filter(id=>id!==athleteId);
   }
-  // Push to Gist
-  try {
-    const payload = JSON.stringify({
-      files: { 'mize_schedule.json': { content: JSON.stringify(data) } }
-    });
-    await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `token ${GIST_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      body: payload
-    });
-  } catch(e) { console.error('Gist update failed:', e); }
+  pushDataToGist();
 }
 const HS=8,HE=22,SH=28,SLOTS=(HE-HS)*2;
 let data=null,tab='list',curMsg='';
@@ -595,14 +581,48 @@ function mapsUrl(location, address) {
 }
 
 function togglePaid(progId, dateId, athleteId, field, paid, btn) {
-  // Update button immediately for instant feedback
+  // paid=true → green, paid=false → grey
   const color = paid ? '#00d4aa' : '#555';
   const bg = paid ? 'rgba(0,212,170,0.15)' : 'transparent';
   btn.style.color = color;
   btn.style.borderColor = color;
   btn.style.background = bg;
-  // Update data and push to Gist
   updatePaidStatus(progId, dateId, athleteId, field, paid);
+}
+
+function togglePrivatePaid(sessionId, field, paid, btn) {
+  // Toggle paid on a private session or meeting
+  const color = paid ? '#00d4aa' : '#555';
+  const bg = paid ? 'rgba(0,212,170,0.15)' : 'transparent';
+  btn.style.color = color;
+  btn.style.borderColor = color;
+  btn.style.background = bg;
+  // Update local data
+  const sessions = (data.privateSessions||[]);
+  const s = sessions.find(x=>x.id===sessionId);
+  if(s) {
+    s[field] = paid;
+    pushDataToGist();
+  }
+  const meetings = (data.meetings||[]);
+  const m = meetings.find(x=>x.id===sessionId);
+  if(m) {
+    m[field] = paid;
+    if(field==='paid') m.paymentStatus = paid ? 'paid' : 'unpaid';
+    pushDataToGist();
+  }
+}
+
+function pushDataToGist() {
+  if(!data) return;
+  const payload = JSON.stringify({
+    files: { 'mize_schedule.json': { content: JSON.stringify(data) } }
+  });
+  fetch('https://api.github.com/gists/'+GIST_ID, {
+    method: 'PATCH',
+    headers: { 'Authorization': 'token '+GIST_TOKEN, 'Content-Type': 'application/json' },
+    body: payload
+  }).catch(e=>console.error('Gist push failed:', e));
 }
 
 function toggleOthers(id) {
@@ -648,7 +668,8 @@ function ecHTML(ev,idx){
       function paidBtn(athleteId, field, label, paid) {
         const color = paid ? '#00d4aa' : '#555';
         const bg = paid ? 'rgba(0,212,170,0.15)' : 'transparent';
-        return `<button onclick="togglePaid('${progId}','${dateId}','${athleteId}','${field}',${!paid},this)" style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid ${color};color:${color};background:${bg};cursor:pointer;margin-left:4px">${label}</button>`;
+        const nextState = !paid;
+        return `<button onclick="togglePaid('${progId}','${dateId}','${athleteId}','${field}',${nextState},this)" style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid ${color};color:${color};background:${bg};cursor:pointer;margin-left:4px">${paid?'✓ ':''}${label}</button>`;
       }
 
       let html = '<div style="margin-top:8px"><div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Athletes</div>';
@@ -675,16 +696,44 @@ function ecHTML(ev,idx){
   }
   if(ev.kind==='private') {
     const s=ev.session;
-    extraDetails += '<div style="margin-top:8px;font-size:12px;color:#aaa">';
-    extraDetails += s.type||'Private Session';
-    if(s.length) extraDetails += ' · '+s.length;
-    extraDetails += '</div>';
+    const ts=s.time?ft(s.time)+(s.endTime?' - '+ft(s.endTime):''):'';
+    const loc=[s.poolName,s.poolAddress].filter(Boolean).join(', ');
+    extraDetails += '<div style="margin-top:8px;font-size:12px;color:#aaa">'+(s.type||'Private Session')+(s.length?' · '+s.length:'')+'</div>';
     if(s.notes) extraDetails += '<div style="margin-top:6px;font-size:12px;color:#666;font-style:italic">'+s.notes+'</div>';
+    // Payment buttons
+    const isSemi = (s.format||'').startsWith('Semi');
+    if(s.totalFee || s.fee) {
+      extraDetails += '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">';
+      // Athlete 1
+      const fee1 = s.fee || s.totalFee || 0;
+      const paid1 = s.paid === true;
+      const color1 = paid1 ? '#00d4aa' : '#555';
+      const bg1 = paid1 ? 'rgba(0,212,170,0.15)' : 'transparent';
+      extraDetails += `<span style="font-size:12px;color:#aaa">${s.athleteName||'Athlete 1'}</span>`;
+      extraDetails += `<button onclick="togglePrivatePaid('${s.id}','paid',${!paid1},this)" style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid ${color1};color:${color1};background:${bg1};cursor:pointer">${paid1?'✓ ':''}$${fee1}</button>`;
+      // Athlete 2 for semi-private
+      if(isSemi && s.athlete2Id) {
+        const fee2 = s.fee2 || s.fee || 0;
+        const paid2 = s.paid2 === true;
+        const color2 = paid2 ? '#00d4aa' : '#555';
+        const bg2 = paid2 ? 'rgba(0,212,170,0.15)' : 'transparent';
+        extraDetails += `<span style="font-size:12px;color:#aaa;margin-left:8px">${s.athlete2Name||'Athlete 2'}</span>`;
+        extraDetails += `<button onclick="togglePrivatePaid('${s.id}','paid2',${!paid2},this)" style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid ${color2};color:${color2};background:${bg2};cursor:pointer">${paid2?'✓ ':''}$${fee2}</button>`;
+      }
+      extraDetails += '</div>';
+    }
   }
   if(ev.kind==='meeting') {
     const m=ev.meeting;
     if(m.topics) extraDetails += '<div style="margin-top:8px"><div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Topics</div><div style="font-size:12px;color:#aaa">'+m.topics+'</div></div>';
     if(m.notes) extraDetails += '<div style="margin-top:6px;font-size:12px;color:#666;font-style:italic">'+m.notes+'</div>';
+    // Payment button for paid meetings
+    if(!m.isFree && m.fee > 0) {
+      const isPaid = m.paymentStatus === 'paid' || m.paid === true;
+      const color = isPaid ? '#00d4aa' : '#555';
+      const bg = isPaid ? 'rgba(0,212,170,0.15)' : 'transparent';
+      extraDetails += `<div style="margin-top:8px"><button onclick="togglePrivatePaid('${m.id}','paid',${!isPaid},this)" style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid ${color};color:${color};background:${bg};cursor:pointer">${isPaid?'✓ ':''}Fee $${m.fee}</button></div>`;
+    }
   }
 
   return`<div class="ecard ${ev.kind}">
