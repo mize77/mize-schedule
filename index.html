@@ -767,6 +767,95 @@ function pushDataToGist() {
   }).catch(e=>console.error('Gist push failed:', e));
 }
 
+function addToCalendar(ev) {
+  // Build ICS event
+  function icsDate(dateStr, timeStr) {
+    // dateStr: YYYY-MM-DDT... or YYYY-MM-DD, timeStr: HH:MM AM/PM or 24h
+    const d = new Date(dateStr.length === 10 ? dateStr + 'T12:00:00' : dateStr);
+    if(timeStr) {
+      // Parse time string e.g. "9:00 AM", "14:30"
+      const m = timeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+      if(m) {
+        let h = parseInt(m[1]), min = parseInt(m[2]);
+        if(m[3]) { if(m[3].toUpperCase()==='PM' && h!==12) h+=12; if(m[3].toUpperCase()==='AM' && h===12) h=0; }
+        d.setHours(h, min, 0, 0);
+      }
+    }
+    // Format as local time YYYYMMDDTHHMMSS
+    const pad = n => String(n).padStart(2,'0');
+    return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+  }
+
+  let title='', start='', end='', location='', description='';
+
+  if(ev.kind==='group') {
+    const occ=ev.occ, prog=ev.prog;
+    title = ev.name;
+    start = icsDate(occ.date, ev.startTime);
+    end = ev.endTime ? icsDate(occ.date, ev.endTime) : '';
+    location = [ev.location, ev.address].filter(Boolean).join(', ');
+    const attending = (ev._attending||[]).map(a=>athName(a)).join(', ');
+    description = `Athletes: ${attending}\\nCoach: ${ev.lc?(ev.lc.nickname||ev.lc.firstname||'MIZE'):'MIZE'}`;
+  } else if(ev.kind==='private') {
+    const s=ev.session;
+    title = s.athleteName + (s.athlete2Name?' & '+s.athlete2Name:'') + ' — ' + (s.type||'Private Session');
+    start = icsDate(s.date, s.time);
+    end = s.endTime ? icsDate(s.date, s.endTime) : '';
+    location = [s.poolName, s.poolAddress].filter(Boolean).join(', ');
+    description = `${s.type||'Private Session'}${s.length?' · '+s.length:''}${s.notes?'\\n'+s.notes:''}`;
+  } else if(ev.kind==='meeting') {
+    const m=ev.meeting;
+    const tl = m.meetingType==='Other'?m.otherType:m.meetingType;
+    const athlete = (data.athletes||[]).find(a=>a.id===m.athleteId);
+    title = tl + (athlete?' — '+athName(athlete):'');
+    start = icsDate(m.date, m.time);
+    end = m.endTime ? icsDate(m.date, m.endTime) : '';
+    location = m.location||'';
+    description = m.topics||'';
+  }
+
+  // If no end time, default to 1.5 hours later
+  if(!end && start) {
+    const s = new Date(
+      parseInt(start.slice(0,4)), parseInt(start.slice(4,6))-1, parseInt(start.slice(6,8)),
+      parseInt(start.slice(9,11)), parseInt(start.slice(11,13))
+    );
+    s.setMinutes(s.getMinutes()+90);
+    const pad = n=>String(n).padStart(2,'0');
+    end = `${s.getFullYear()}${pad(s.getMonth()+1)}${pad(s.getDate())}T${pad(s.getHours())}${pad(s.getMinutes())}00`;
+  }
+
+  const uid = 'mize-' + (ev.id||Date.now()) + '@mize-app';
+  const now = new Date();
+  const pad = n=>String(n).padStart(2,'0');
+  const stamp = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}T${pad(now.getHours())}${pad(now.getMinutes())}00Z`;
+
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//MIZE Coaching//MIZE App//EN',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${stamp}`,
+    `DTSTART:${start}`,
+    `DTEND:${end}`,
+    `SUMMARY:${title}`,
+    location ? `LOCATION:${location}` : '',
+    description ? `DESCRIPTION:${description}` : '',
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ].filter(Boolean).join('\r\n');
+
+  // Create downloadable .ics file and trigger it
+  const blob = new Blob([ics], {type:'text/calendar;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (title||'event').replace(/[^a-z0-9]/gi,'_')+'.ics';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+
 function toggleOthers(id) {
   const el = document.getElementById('others-'+id);
   const arrow = el?.previousElementSibling;
@@ -903,6 +992,7 @@ function ecHTML(ev,idx){
       <button class="mbtn athlete" onclick="showAthleteModal('confirm',_evs[${idx}])">Athlete Confirmation</button>
       ${invBtn}
       <button class="mbtn coach" onclick="showAthleteModal('coach',_evs[${idx}])">Coach Confirmation</button>
+      <button class="mbtn" onclick="addToCalendar(_evs[${idx}])" style="background:rgba(245,166,35,0.1);border-color:rgba(245,166,35,0.3);color:#f5a623">📅 Calendar</button>
     </div>
   </div>
 </div>`;
