@@ -97,6 +97,7 @@ body{background:#0b0f14;color:#e8edf2;font-family:-apple-system,BlinkMacSystemFo
     </div>
     <div class="header-btns">
       <button class="hbtn blue" onclick="showBriefing()">3-Day Brief</button>
+      <button class="hbtn" onclick="showNotes()" style="background:rgba(167,139,250,0.1);border-color:rgba(167,139,250,0.3);color:#a78bfa">Notes</button>
       <button class="hbtn" onclick="loadData()">Refresh</button>
     </div>
   </div>
@@ -582,6 +583,119 @@ function selectBriefCoach(idx) {
 
 window._evs=[];
 
+// ── NOTES SYSTEM ─────────────────────────────────────────────
+const NOTES_KEY = 'mize_claude_notes';
+
+function getNotes() {
+  try { return JSON.parse(localStorage.getItem(NOTES_KEY)||'[]'); } catch(e) { return []; }
+}
+function saveNotes(notes) {
+  localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
+}
+
+function showNotes() {
+  document.getElementById('notesOverlay').style.display = 'flex';
+  renderNotesList();
+}
+function hideNotes() {
+  document.getElementById('notesOverlay').style.display = 'none';
+  stopVoice();
+}
+
+function renderNotesList() {
+  const notes = getNotes();
+  const list = document.getElementById('notesList');
+  if(!notes.length) {
+    list.innerHTML = '<div style="color:#555;font-size:13px;text-align:center;padding:20px">No notes yet</div>';
+    return;
+  }
+  list.innerHTML = notes.map((n,i) => `
+    <div style="background:#1a1f27;border:1px solid #2a2f3a;border-radius:10px;padding:12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div style="font-size:11px;color:#555;margin-bottom:6px">${new Date(n.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+        <button onclick="deleteNote(${i})" style="font-size:11px;color:#555;background:transparent;border:none;cursor:pointer;flex-shrink:0">✕</button>
+      </div>
+      <div style="font-size:13px;color:#c8d0dc;white-space:pre-wrap;word-break:break-word">${escHtml(n.text)}</div>
+    </div>
+  `).join('');
+}
+
+function addNote() {
+  const ta = document.getElementById('noteInput');
+  const text = ta.value.trim();
+  if(!text) return;
+  const notes = getNotes();
+  notes.unshift({ text, ts: Date.now() });
+  saveNotes(notes);
+  ta.value = '';
+  renderNotesList();
+}
+
+function deleteNote(idx) {
+  const notes = getNotes();
+  notes.splice(idx, 1);
+  saveNotes(notes);
+  renderNotesList();
+}
+
+function sendNotesToClaude() {
+  const notes = getNotes();
+  if(!notes.length) { alert('No notes to send.'); return; }
+  const txt = '📋 MIZE App Notes for Claude:\n\n' +
+    notes.map((n,i) => `${i+1}. [${new Date(n.ts).toLocaleDateString('en-US',{month:'short',day:'numeric'})}]\n${n.text}`).join('\n\n');
+  navigator.clipboard.writeText(txt).then(()=>{
+    window.open('https://claude.ai', '_blank');
+    setTimeout(()=>alert('Notes copied! Paste them into Claude.'), 500);
+  }).catch(()=>{
+    // Fallback: show in a textarea to copy manually
+    const ta = document.getElementById('noteInput');
+    ta.value = txt;
+    ta.select();
+    alert('Select all and copy, then paste into Claude at claude.ai');
+  });
+}
+
+// Voice to text
+let recognition = null;
+let isListening = false;
+
+function toggleVoice() {
+  if(isListening) { stopVoice(); return; }
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SpeechRecognition) { alert('Voice input not supported in this browser.'); return; }
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+  const btn = document.getElementById('voiceBtn');
+  const ta = document.getElementById('noteInput');
+  let interim = '';
+  recognition.onstart = () => {
+    isListening = true;
+    btn.textContent = '⏹ Stop';
+    btn.style.color = '#ef4444';
+    btn.style.borderColor = '#ef4444';
+  };
+  recognition.onresult = e => {
+    let final = '';
+    interim = '';
+    for(let i=e.resultIndex;i<e.results.length;i++) {
+      if(e.results[i].isFinal) final += e.results[i][0].transcript;
+      else interim += e.results[i][0].transcript;
+    }
+    if(final) ta.value += (ta.value ? ' ' : '') + final.trim();
+  };
+  recognition.onend = () => stopVoice();
+  recognition.start();
+}
+
+function stopVoice() {
+  if(recognition) { try { recognition.stop(); } catch(e){} recognition = null; }
+  isListening = false;
+  const btn = document.getElementById('voiceBtn');
+  if(btn) { btn.textContent = '🎤 Voice'; btn.style.color = '#a78bfa'; btn.style.borderColor = 'rgba(167,139,250,0.3)'; }
+}
+
 function mapsUrl(location, address) {
   const query = encodeURIComponent([location, address].filter(Boolean).join(', '));
   // Apple Maps URL scheme — opens Maps app on iPhone
@@ -821,5 +935,22 @@ function showEvDetail(idx){
 loadData();
 setInterval(loadData,5*60*1000);
 </script>
+<!-- Notes Overlay -->
+<div id="notesOverlay" style="display:none;position:fixed;inset:0;background:#0b0f14;z-index:200;flex-direction:column;padding:env(safe-area-inset-top,20px) 16px 16px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-top:8px">
+    <span style="font-size:18px;font-weight:700;color:#a78bfa">Notes for Claude</span>
+    <button onclick="hideNotes()" style="color:#555;background:transparent;border:none;font-size:20px;cursor:pointer">✕</button>
+  </div>
+  <!-- Input area -->
+  <textarea id="noteInput" placeholder="Type or speak your note..." style="width:100%;box-sizing:border-box;background:#1a1f27;border:1px solid #2a2f3a;border-radius:10px;color:#e8edf2;font-size:14px;padding:12px;min-height:100px;resize:none;margin-bottom:8px;font-family:-apple-system,sans-serif"></textarea>
+  <div style="display:flex;gap:8px;margin-bottom:16px">
+    <button id="voiceBtn" onclick="toggleVoice()" style="flex:1;padding:10px;border-radius:10px;background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.3);color:#a78bfa;font-size:13px;font-weight:600;cursor:pointer">🎤 Voice</button>
+    <button onclick="addNote()" style="flex:1;padding:10px;border-radius:10px;background:rgba(0,212,170,0.15);border:1px solid rgba(0,212,170,0.3);color:#00d4aa;font-size:13px;font-weight:600;cursor:pointer">+ Save Note</button>
+  </div>
+  <!-- Saved notes -->
+  <div id="notesList" style="flex:1;overflow-y:auto"></div>
+  <!-- Send to Claude -->
+  <button onclick="sendNotesToClaude()" style="width:100%;margin-top:12px;padding:14px;border-radius:12px;background:rgba(91,141,238,0.15);border:1px solid rgba(91,141,238,0.3);color:#5b8dee;font-size:14px;font-weight:700;cursor:pointer">📋 Copy & Open Claude</button>
+</div>
 </body>
 </html>
