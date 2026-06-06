@@ -449,9 +449,13 @@ function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-function poolNote(locationStr) {
+function poolNote(locationStr, athleteId, poolFeePaid) {
   const loc = (locationStr||'').toLowerCase();
-  if(loc.includes('jake')) return " There is an additional fee of $20 for the host of the pool that you can pay directly to me by Venmo to @MIZE77.";
+  if(loc.includes('jake')) {
+    const alreadyPaid = poolFeePaid && athleteId && (poolFeePaid||[]).includes(athleteId);
+    if(alreadyPaid) return '';
+    return " There is an additional fee of $20 for the host of the pool that you can pay directly to me by Venmo to @MIZE77.";
+  }
   if(loc.includes('mara')) return "\n\n- Park on 35th St (by citrus trees)\n- There is a gate into the pool area that may be open - if not, the code is 1972\n";
   return '';
 }
@@ -467,8 +471,7 @@ function buildConfirmForAthlete(a, ev) {
     const isPaid=isPkg||(occ.paidAttendees||[]).includes(a.id);
     const fee=prog.sessionFee||175;
     const unpaid=!isPaid?'\n\nPlease venmo the fee of $'+fee+' to my account @MIZE77 to reserve the time slot.':'';
-    const pNote=poolNote(occ.location||prog.location);
-    return'Hi '+parent+', this is to confirm the participation of '+goalie+' in the goalie session on '+fdl(occ.date)+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'.'+pNote+unpaid+'\n\nSee you there!\nMIZE';
+    const pNote=poolNote(occ.location||prog.location, a.id, occ.poolFeePaid);
   }
   if(ev.kind==='private') {
     const s=ev.session;
