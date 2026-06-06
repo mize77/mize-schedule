@@ -270,6 +270,12 @@ function showAthleteModal(type, ev) {
       const occ = ev.occ, prog = ev.prog;
       if(type==='confirm') {
         modalEvs = ev._attending || (ev.occ.attendees||[]).map(id=>athletes.find(a=>a.id===id)).filter(Boolean);
+        // Ensure _tier is set (fallback path may not have it)
+        if(modalEvs.length && modalEvs[0]._tier === undefined) {
+          const sessRegion = ev._sessRegion||'';
+          const isHP2 = ev._isHP||false;
+          modalEvs.forEach(a=>{ a._tier = athleteScore(a,sessRegion,isHP2); });
+        }
         if(!modalEvs.length){showMsg('Athlete Confirmation','No athletes registered yet.');return;}
       } else {
         // invite — athletes NOT attending, sorted by tier
@@ -277,9 +283,9 @@ function showAthleteModal(type, ev) {
         const candidates = athletes.filter(a=>a.active!==false&&!attending.has(a.id));
         const sessRegion = ev._sessRegion||'';
         const isHP2 = ev._isHP||false;
+        candidates.forEach(a=>{ a._tier = athleteScore(a,sessRegion,isHP2); });
         candidates.sort((a,b)=>{
-          const sa=athleteScore(a,sessRegion,isHP2), sb=athleteScore(b,sessRegion,isHP2);
-          if(sa!==sb) return sa-sb;
+          if(a._tier!==b._tier) return a._tier-b._tier;
           return (athName(a)||'').localeCompare(athName(b)||'');
         });
         modalEvs = candidates;
