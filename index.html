@@ -479,12 +479,14 @@ function copyMsg(){
   });
 }
 
-function buildBriefing(){
+function buildBriefing(firstName){
   const now=new Date();
-  const localToday=ldk(now);
   const DAY=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const MON=['January','February','March','April','May','June','July','August','September','October','November','December'];
-  let lines=['MIZE Coaching - Next 3 Days',''];
+  const intro = firstName
+    ? `Hi ${firstName}, here is my schedule for the next 3 days. Please check and let me know if you see any conflicts. Thanks MIZE\n\n`
+    : '';
+  let lines=[intro+'MIZE Coaching - Next 3 Days',''];
   days3().forEach((day,i)=>{
     const dk=ldk(day);
     const dayLbl=i===0?'Today':i===1?'Tomorrow':DAY[day.getDay()];
@@ -507,12 +509,49 @@ function buildBriefing(){
 
 function showBriefing(){
   if(!data){loadData().then(()=>showBriefing());return;}
-  const txt=buildBriefing();
-  curMsg=txt;
-  document.getElementById('modalTitle').textContent='3-Day Schedule Briefing';
-  document.getElementById('modalText').textContent=txt;
-  document.getElementById('copyBtn').textContent='Copy';
-  document.getElementById('modal').style.display='flex';
+  const coaches = (data.coaches||[]).filter(c=>!c.isDefault); // exclude MIZE himself
+  const msg = buildBriefing('');
+
+  // Build coach selector
+  let coachTabs = '';
+  if(coaches.length) {
+    coachTabs = '<div style="margin-bottom:10px"><div style="font-size:11px;color:#555;margin-bottom:6px">Send to coach:</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap" id="briefCoachTabs">'
+      + coaches.map((c,i)=>{
+          const name = c.nickname||c.firstname||c.name||'Coach';
+          return `<button onclick="selectBriefCoach(${i})" id="bct-${i}" style="padding:5px 12px;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #2a2f3a;background:transparent;color:#666">${name}</button>`;
+        }).join('')
+      + '</div></div>';
+  }
+
+  document.getElementById('modalTitle').textContent = '3-Day Schedule Briefing';
+  document.getElementById('modalBody').innerHTML = coachTabs + '<div class="msg-text" id="modalText">' + escHtml(msg) + '</div>';
+  document.getElementById('smsBtn').innerHTML = `<a href="${smsUrl('', msg)}" style="flex:1;padding:13px;border-radius:10px;background:rgba(0,212,170,0.15);color:#00d4aa;font-size:14px;font-weight:700;border:1px solid rgba(0,212,170,0.3);text-align:center;text-decoration:none;display:block">Open in Messages</a>`;
+  document.getElementById('copyBtn').textContent = 'Copy';
+  curMsg = msg;
+  window._briefCoaches = coaches;
+  document.getElementById('modal').style.display = 'flex';
+}
+
+function selectBriefCoach(idx) {
+  const coaches = window._briefCoaches || [];
+  const c = coaches[idx];
+  if(!c) return;
+  const name = c.nickname||c.firstname||c.name||'Coach';
+  const phone = getCoachPhone(c);
+  const msg = buildBriefing(name);
+  curMsg = msg;
+  document.getElementById('modalText').textContent = msg;
+  // Update SMS button
+  document.getElementById('smsBtn').innerHTML = `<a href="${smsUrl(phone, msg)}" style="flex:1;padding:13px;border-radius:10px;background:rgba(0,212,170,0.15);color:#00d4aa;font-size:14px;font-weight:700;border:1px solid rgba(0,212,170,0.3);text-align:center;text-decoration:none;display:block">Open in Messages${phone?'':' (no number)'}</a>`;
+  // Highlight selected tab
+  coaches.forEach((_,i)=>{
+    const btn = document.getElementById('bct-'+i);
+    if(!btn) return;
+    btn.style.background = i===idx ? 'rgba(91,141,238,0.2)' : 'transparent';
+    btn.style.borderColor = i===idx ? '#5b8dee' : '#2a2f3a';
+    btn.style.color = i===idx ? '#5b8dee' : '#666';
+  });
 }
 
 window._evs=[];
