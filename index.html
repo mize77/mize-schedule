@@ -141,6 +141,14 @@ async function updatePaidStatus(progId, dateId, athleteId, field, paid) {
   } else {
     date[field] = date[field].filter(id=>id!==athleteId);
   }
+  // Also update the cached _evs occ so card re-renders correctly
+  (window._evs||[]).forEach(ev=>{
+    if(ev._progId===progId && ev._dateId===dateId) {
+      if(!ev.occ[field]) ev.occ[field]=[];
+      if(paid) { if(!ev.occ[field].includes(athleteId)) ev.occ[field].push(athleteId); }
+      else { ev.occ[field]=ev.occ[field].filter(id=>id!==athleteId); }
+    }
+  });
   pushDataToGist();
 }
 const HS=8,HE=22,SH=28,SLOTS=(HE-HS)*2;
@@ -590,26 +598,16 @@ function togglePaid(progId, dateId, athleteId, field, paid, btn) {
 }
 
 function togglePrivatePaid(sessionId, field, paid, btn) {
-  // Replace button with locked green span
+  // Replace button with locked green span immediately
   const span = document.createElement('span');
   span.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid #00d4aa;color:#00d4aa;background:rgba(0,212,170,0.15)';
   span.textContent = '✓ ' + btn.textContent;
   btn.replaceWith(span);
-  paid = true;
   // Update local data
-  const sessions = (data.privateSessions||[]);
-  const s = sessions.find(x=>x.id===sessionId);
-  if(s) {
-    s[field] = paid;
-    pushDataToGist();
-  }
-  const meetings = (data.meetings||[]);
-  const m = meetings.find(x=>x.id===sessionId);
-  if(m) {
-    m[field] = paid;
-    if(field==='paid') m.paymentStatus = paid ? 'paid' : 'unpaid';
-    pushDataToGist();
-  }
+  const s = (data.privateSessions||[]).find(x=>x.id===sessionId);
+  if(s) { s[field] = true; pushDataToGist(); }
+  const m = (data.meetings||[]).find(x=>x.id===sessionId);
+  if(m) { m[field] = true; m.paymentStatus = 'paid'; pushDataToGist(); }
 }
 
 function pushDataToGist() {
