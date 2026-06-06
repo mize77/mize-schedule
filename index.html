@@ -581,22 +581,21 @@ function mapsUrl(location, address) {
 }
 
 function togglePaid(progId, dateId, athleteId, field, paid, btn) {
-  // paid=true → green, paid=false → grey
-  const color = paid ? '#00d4aa' : '#555';
-  const bg = paid ? 'rgba(0,212,170,0.15)' : 'transparent';
-  btn.style.color = color;
-  btn.style.borderColor = color;
-  btn.style.background = bg;
-  updatePaidStatus(progId, dateId, athleteId, field, paid);
+  // Replace button with locked green span
+  const span = document.createElement('span');
+  span.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid #00d4aa;color:#00d4aa;background:rgba(0,212,170,0.15);margin-left:4px';
+  span.textContent = '✓ ' + btn.textContent;
+  btn.replaceWith(span);
+  updatePaidStatus(progId, dateId, athleteId, field, true);
 }
 
 function togglePrivatePaid(sessionId, field, paid, btn) {
-  // Toggle paid on a private session or meeting
-  const color = paid ? '#00d4aa' : '#555';
-  const bg = paid ? 'rgba(0,212,170,0.15)' : 'transparent';
-  btn.style.color = color;
-  btn.style.borderColor = color;
-  btn.style.background = bg;
+  // Replace button with locked green span
+  const span = document.createElement('span');
+  span.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid #00d4aa;color:#00d4aa;background:rgba(0,212,170,0.15)';
+  span.textContent = '✓ ' + btn.textContent;
+  btn.replaceWith(span);
+  paid = true;
   // Update local data
   const sessions = (data.privateSessions||[]);
   const s = sessions.find(x=>x.id===sessionId);
@@ -666,10 +665,10 @@ function ecHTML(ev,idx){
       const dateId = ev._dateId;
 
       function paidBtn(athleteId, field, label, paid) {
-        const color = paid ? '#00d4aa' : '#555';
-        const bg = paid ? 'rgba(0,212,170,0.15)' : 'transparent';
-        const nextState = !paid;
-        return `<button onclick="togglePaid('${progId}','${dateId}','${athleteId}','${field}',${nextState},this)" style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid ${color};color:${color};background:${bg};cursor:pointer;margin-left:4px">${paid?'✓ ':''}${label}</button>`;
+        if(paid) {
+          return `<span style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid #00d4aa;color:#00d4aa;background:rgba(0,212,170,0.15);margin-left:4px">✓ ${label}</span>`;
+        }
+        return `<button onclick="togglePaid('${progId}','${dateId}','${athleteId}','${field}',true,this)" style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid #555;color:#555;background:transparent;cursor:pointer;margin-left:4px">${label}</button>`;
       }
 
       let html = '<div style="margin-top:8px"><div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Athletes</div>';
@@ -710,7 +709,9 @@ function ecHTML(ev,idx){
       const color1 = paid1 ? '#00d4aa' : '#555';
       const bg1 = paid1 ? 'rgba(0,212,170,0.15)' : 'transparent';
       extraDetails += `<span style="font-size:12px;color:#aaa">${s.athleteName||'Athlete 1'}</span>`;
-      extraDetails += `<button onclick="togglePrivatePaid('${s.id}','paid',${!paid1},this)" style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid ${color1};color:${color1};background:${bg1};cursor:pointer">${paid1?'✓ ':''}$${fee1}</button>`;
+      extraDetails += paid1
+        ? `<span style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid #00d4aa;color:#00d4aa;background:rgba(0,212,170,0.15)">✓ $${fee1}</span>`
+        : `<button onclick="togglePrivatePaid('${s.id}','paid',true,this)" style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid #555;color:#555;background:transparent;cursor:pointer">$${fee1}</button>`;
       // Athlete 2 for semi-private
       if(isSemi && s.athlete2Id) {
         const fee2 = s.fee2 || s.fee || 0;
@@ -718,7 +719,9 @@ function ecHTML(ev,idx){
         const color2 = paid2 ? '#00d4aa' : '#555';
         const bg2 = paid2 ? 'rgba(0,212,170,0.15)' : 'transparent';
         extraDetails += `<span style="font-size:12px;color:#aaa;margin-left:8px">${s.athlete2Name||'Athlete 2'}</span>`;
-        extraDetails += `<button onclick="togglePrivatePaid('${s.id}','paid2',${!paid2},this)" style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid ${color2};color:${color2};background:${bg2};cursor:pointer">${paid2?'✓ ':''}$${fee2}</button>`;
+        extraDetails += paid2
+          ? `<span style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid #00d4aa;color:#00d4aa;background:rgba(0,212,170,0.15)">✓ $${fee2}</span>`
+          : `<button onclick="togglePrivatePaid('${s.id}','paid2',true,this)" style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid #555;color:#555;background:transparent;cursor:pointer">$${fee2}</button>`;
       }
       extraDetails += '</div>';
     }
@@ -732,7 +735,9 @@ function ecHTML(ev,idx){
       const isPaid = m.paymentStatus === 'paid' || m.paid === true;
       const color = isPaid ? '#00d4aa' : '#555';
       const bg = isPaid ? 'rgba(0,212,170,0.15)' : 'transparent';
-      extraDetails += `<div style="margin-top:8px"><button onclick="togglePrivatePaid('${m.id}','paid',${!isPaid},this)" style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid ${color};color:${color};background:${bg};cursor:pointer">${isPaid?'✓ ':''}Fee $${m.fee}</button></div>`;
+      extraDetails += isPaid
+        ? `<div style="margin-top:8px"><span style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid #00d4aa;color:#00d4aa;background:rgba(0,212,170,0.15)">✓ Fee $${m.fee}</span></div>`
+        : `<div style="margin-top:8px"><button onclick="togglePrivatePaid('${m.id}','paid',true,this)" style="font-size:10px;padding:2px 8px;border-radius:10px;border:1px solid #555;color:#555;background:transparent;cursor:pointer">Fee $${m.fee}</button></div>`;
     }
   }
 
