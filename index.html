@@ -325,6 +325,7 @@ function smsUrl(phone, msg) {
 }
 
 function renderAthleteModal() {
+  if(modalType === 'briefing') return; // briefing manages its own modal content
   const a = modalEvs[modalIdx];
   const title = modalType==='confirm'?'Athlete Confirmation':'Athlete Invitation';
   const msg = modalType==='confirm' ? buildConfirmForAthlete(a, modalEvRef) : buildInviteForAthlete(a, modalEvRef);
@@ -509,20 +510,19 @@ function buildBriefing(firstName){
 
 function showBriefing(){
   if(!data){loadData().then(()=>showBriefing());return;}
-  const coaches = (data.coaches||[]).filter(c=>!c.isDefault); // exclude MIZE himself
+  modalType = 'briefing'; // prevent athlete modal from overwriting
+  modalEvs = [];          // clear any athlete state
+  const coaches = (data.coaches||[]).filter(c=>!c.isDefault);
   const msg = buildBriefing('');
 
   // Build coach selector
-  let coachTabs = '';
-  if(coaches.length) {
-    coachTabs = '<div style="margin-bottom:10px"><div style="font-size:11px;color:#555;margin-bottom:6px">Send to coach:</div>'
-      + '<div style="display:flex;gap:6px;flex-wrap:wrap" id="briefCoachTabs">'
-      + coaches.map((c,i)=>{
-          const name = c.nickname||c.firstname||c.name||'Coach';
-          return `<button onclick="selectBriefCoach(${i})" id="bct-${i}" style="padding:5px 12px;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #2a2f3a;background:transparent;color:#666">${name}</button>`;
-        }).join('')
-      + '</div></div>';
-  }
+  let coachTabs = '<div style="margin-bottom:10px"><div style="font-size:11px;color:#555;margin-bottom:6px">Send to coach:</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap" id="briefCoachTabs">'
+    + coaches.map((c,i)=>{
+        const name = c.nickname||c.firstname||c.name||'Coach';
+        return `<button onclick="selectBriefCoach(${i})" id="bct-${i}" style="padding:5px 12px;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #2a2f3a;background:transparent;color:#666">${name}</button>`;
+      }).join('')
+    + '</div></div>';
 
   document.getElementById('modalTitle').textContent = '3-Day Schedule Briefing';
   document.getElementById('modalBody').innerHTML = coachTabs + '<div class="msg-text" id="modalText">' + escHtml(msg) + '</div>';
