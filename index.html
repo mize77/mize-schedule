@@ -842,6 +842,11 @@ function addToCalendar(ev) {
     `SUMMARY:${title}`,
     location ? `LOCATION:${location}` : '',
     description ? `DESCRIPTION:${description}` : '',
+    'BEGIN:VALARM',
+    'TRIGGER:-PT2H',
+    'ACTION:DISPLAY',
+    'DESCRIPTION:Reminder',
+    'END:VALARM',
     'END:VEVENT',
     'END:VCALENDAR'
   ].filter(Boolean).join('\r\n');
