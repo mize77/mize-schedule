@@ -472,6 +472,7 @@ function buildConfirmForAthlete(a, ev) {
     const fee=prog.sessionFee||175;
     const unpaid=!isPaid?'\n\nPlease venmo the fee of $'+fee+' to my account @MIZE77 to reserve the time slot.':'';
     const pNote=poolNote(occ.location||prog.location, a.id, occ.poolFeePaid);
+    return'Hi '+parent+', this is to confirm the participation of '+goalie+' in the goalie session on '+fdl(occ.date)+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'.'+pNote+unpaid+'\n\nSee you there!\nMIZE';
   }
   if(ev.kind==='private') {
     const s=ev.session;
