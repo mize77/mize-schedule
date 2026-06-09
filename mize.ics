@@ -14,7 +14,7 @@ DTSTART:20260610T170000
 DTEND:20260610T183000
 SUMMARY:High Performance Goalie Group - OC Boys
 LOCATION:Estancia HS, 2323 Placentia Ave, Costa Mesa
-DESCRIPTION:Athletes: August Dodez
+DESCRIPTION:Athletes: August Dodez, John Brewart
 BEGIN:VALARM
 TRIGGER:-PT2H
 ACTION:DISPLAY
