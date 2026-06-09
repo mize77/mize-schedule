@@ -119,7 +119,7 @@ body{background:#0b0f14;color:#e8edf2;font-family:-apple-system,BlinkMacSystemFo
     <div id="smsBtn" style="margin-bottom:8px"></div>
     <div class="sbtn-row">
       <button class="sbtn-copy" id="copyBtn" onclick="copyMsg()">Copy</button>
-      <button class="sbtn-close" onclick="document.getElementById('modal').style.display='none'">Close</button>
+      <button class="sbtn-close" onclick="document.getElementById('modal').style.display='none';_showPkgOffer=false;">Close</button>
     </div>
   </div>
 </div>
@@ -419,12 +419,19 @@ function renderAthleteModal() {
     }
   }
 
-  // SMS button — always show
+  // Package offer checkbox — only for invite, only for athletes without package
+  let pkgOfferCheckbox = '';
+  if(modalType==='invite' && a && !a.hasPackage) {
+    pkgOfferCheckbox = `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:rgba(0,212,170,0.06);border:1px solid rgba(0,212,170,0.2);margin-bottom:8px">
+      <input type="checkbox" id="pkgOfferPhone" ${_showPkgOffer?'checked':''} onchange="togglePkgOffer(this.checked)" style="accent-color:#00d4aa;width:15px;height:15px;cursor:pointer"/>
+      <label for="pkgOfferPhone" style="font-size:12px;color:#00d4aa;cursor:pointer">Include Goalie Performance Package offer</label>
+    </div>`;
+  }
   const phone = getBestPhone(a);
   const smsBtn = `<a href="${smsUrl(phone, msg)}" style="flex:1;padding:13px;border-radius:10px;background:rgba(0,212,170,0.15);color:#00d4aa;font-size:14px;font-weight:700;border:1px solid rgba(0,212,170,0.3);text-align:center;text-decoration:none;display:block">Open in Messages</a>`;
 
   document.getElementById('modalTitle').textContent = title;
-  document.getElementById('modalBody').innerHTML = tabs +
+  document.getElementById('modalBody').innerHTML = tabs + pkgOfferCheckbox +
     '<div class="msg-text" id="modalText">' + escHtml(msg) + '</div>';
   document.getElementById('smsBtn').innerHTML = smsBtn;
   curMsg = msg;
@@ -438,6 +445,11 @@ function toggleModalOthers() {
   const open = el.style.display !== 'none';
   el.style.display = open ? 'none' : 'flex';
   if(btn) btn.textContent = btn.textContent.replace(open?'▼':'▶', open?'▶':'▼');
+}
+
+function togglePkgOffer(checked) {
+  _showPkgOffer = checked;
+  renderAthleteModal(); // re-render with updated message
 }
 
 function selectAthlete(idx) {
@@ -456,38 +468,73 @@ function poolNote(locationStr, athleteId, poolFeePaid) {
     if(alreadyPaid) return '';
     return " There is an additional fee of $20 for the host of the pool that you can pay directly to me by Venmo to @MIZE77.";
   }
-  if(loc.includes('mara')) return "\n\n- Park on 35th St (by citrus trees)\n- There is a gate into the pool area that may be open - if not, the code is 1972\n";
+  if(loc.includes('mara')) return "\n\n- Park on 35th St (by citrus trees)\n- There is a gate into the pool area that may be open - if not, the code is 1972";
   return '';
 }
 
+function calcEndTime(startTime, lengthStr) {
+  // Calculate end time from start + length string like "90 min"
+  if(!startTime) return '';
+  const mins = lengthStr==="30 min"?30:lengthStr==="45 min"?45:lengthStr==="60 min"?60:lengthStr==="90 min"?90:lengthStr==="120 min"?120:0;
+  if(!mins) return '';
+  const [h,m] = startTime.split(':').map(Number);
+  const total = h*60+m+mins;
+  const eH=Math.floor(total/60)%24, eM=total%60;
+  return String(eH).padStart(2,'0')+':'+String(eM).padStart(2,'0');
+}
+
+function timeRange(startTime, endTime, fallbackLength) {
+  const st = startTime ? ft(startTime) : '';
+  const et = endTime ? ft(endTime) : (fallbackLength ? ft(calcEndTime(startTime, fallbackLength)) : '');
+  if(st && et) return 'from '+st+' to '+et;
+  if(st) return 'at '+st;
+  return '';
+}
+
+// showPkgOffer state per modal — managed via window variable
+let _showPkgOffer = false;
+
 function buildConfirmForAthlete(a, ev) {
   if(!a) return '';
-  const parent = parentName(a), goalie = athName(a);
+  const parent = parentName(a), goalie = athName(a).split(' ')[0];
+  const parentFirst = parent.split(' ')[0];
+
   if(ev.kind==='group') {
     const occ=ev.occ, prog=ev.prog;
-    const ts=occ.startTime?ft(occ.startTime)+(occ.endTime?' - '+ft(occ.endTime):''):'';
+    const ts = timeRange(occ.startTime||prog.startTime, occ.endTime||prog.endTime, '90 min');
     const loc=[occ.location||prog.location,occ.address||prog.address].filter(Boolean).join(', ');
     const isPkg=(occ.pkgAttendees||[]).includes(a.id);
     const isPaid=isPkg||(occ.paidAttendees||[]).includes(a.id);
     const fee=prog.sessionFee||175;
     const unpaid=!isPaid?'\n\nPlease venmo the fee of $'+fee+' to my account @MIZE77 to reserve the time slot.':'';
     const pNote=poolNote(occ.location||prog.location, a.id, occ.poolFeePaid);
-    return'Hi '+parent+', this is to confirm the participation of '+goalie+' in the goalie session on '+fdl(occ.date)+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'.'+pNote+unpaid+'\n\nSee you there!\nMIZE';
+    const locStr = loc ? ' at '+loc : '';
+    const tsStr = ts ? ' '+ts : '';
+    return 'Hi '+parentFirst+', this is to confirm the participation of '+goalie+' in the goalie session on '+fdl(occ.date)+tsStr+locStr+'.'+pNote+unpaid+'\n\nSee you there!\nMIZE';
   }
+
   if(ev.kind==='private') {
     const s=ev.session;
-    const ts=s.time?ft(s.time)+(s.endTime?' - '+ft(s.endTime):''):'';
+    const ts = timeRange(s.time, s.endTime, s.length);
     const loc=[s.poolName,s.poolAddress].filter(Boolean).join(', ');
-    const unpaid=!s.paid&&(s.totalFee||s.fee)?'\n\nPlease venmo the fee of $'+(s.totalFee||s.fee)+' to my account @MIZE77 to reserve the time slot.':'';
-    const pNote=poolNote(s.poolName);
-    return'Hi '+parent+', this is to confirm the participation of '+goalie+' in the '+(s.type||'session')+' on '+fdl(s.date)+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'.'+pNote+unpaid+'\n\nSee you there!\nMIZE';
+    const isSemi = (s.format||'').startsWith('Semi');
+    const totalFee = isSemi ? (s.fee||0) : (s.totalFee||s.fee||0);
+    const unpaid=!s.paid&&totalFee?'\n\nPlease venmo the fee of $'+totalFee+' to my account @MIZE77 to reserve the time slot.':'';
+    const pNote=poolNote(s.poolName, a.id, []);
+    const locStr = loc ? ' at '+loc : '';
+    const tsStr = ts ? ' '+ts : '';
+    return 'Hi '+parentFirst+', this is to confirm the participation of '+goalie+' in the '+(s.type||'Private Session')+' on '+fdl(s.date)+tsStr+locStr+'.'+pNote+unpaid+'\n\nSee you there!\nMIZE';
   }
+
   if(ev.kind==='meeting') {
     const m=ev.meeting;
     const tl=m.meetingType==='Other'?m.otherType:m.meetingType;
-    const ts=m.time?ft(m.time):'';
+    const ts = timeRange(m.time, '', m.length);
+    const tsStr = ts ? ' '+ts : '';
+    const locStr = m.location ? ' at '+m.location : '';
     const unpaid=!m.isFree&&m.fee?'\n\nPlease venmo the fee of $'+m.fee+' to my account @MIZE77 to reserve the time slot.':'';
-    return'Hi '+parent+',\n\nThis is to confirm our '+tl+' on '+fdl(m.date)+(ts?' at '+ts:'')+(m.location?' at '+m.location:'')+'.'+(m.topics?'\n\nTopics:\n'+m.topics.split(/[\n,]+/).map(t=>t.trim()).filter(Boolean).map(t=>'- '+t).join('\n'):'')+unpaid+'\n\nBest greetings, MIZE';
+    const topicsStr = m.topics ? '\n\nTopics we will cover:\n'+m.topics.split(/[\n,]+/).map(t=>t.trim()).filter(Boolean).map(t=>'- '+t).join('\n') : '';
+    return 'Hi '+parentFirst+',\n\nThis is to confirm our upcoming '+tl+' on '+fdl(m.date)+tsStr+locStr+'.'+topicsStr+unpaid+'\n\nPlease let me know if this works for you or if you need to reschedule.\n\nBest greetings, MIZE';
   }
   return '';
 }
@@ -495,18 +542,40 @@ function buildConfirmForAthlete(a, ev) {
 function buildInviteForAthlete(a, ev) {
   if(!a||ev.kind!=='group') return buildConfirmForAthlete(a,ev);
   const prog=ev.prog, occ=ev.occ;
-  const ts=occ.startTime?ft(occ.startTime)+(occ.endTime?' - '+ft(occ.endTime):''):'';
+  const ts = timeRange(occ.startTime||prog.startTime, occ.endTime||prog.endTime, '90 min');
   const loc=[occ.location||prog.location,occ.address||prog.address].filter(Boolean).join(', ');
-  const goalie=athName(a), parent=parentName(a);
-  const hasPkg=a.packageRemaining>0;
+  const goalie=athName(a).split(' ')[0], parent=parentName(a).split(' ')[0];
+  const isHP = prog.level==='High Performance';
   const fee=prog.sessionFee||175;
-  const feeSection=hasPkg
-    ?'You still have '+a.packageRemaining+' session'+(a.packageRemaining!==1?'s':'')+' left with your Goalie Performance Package. If '+goalie+' would like to join this session please text me to reserve the spot and I will confirm by text if it is still available.'
-    :'If '+goalie+' would like to participate please sign up online at www.theperfectgoalie.com. The fee is $'+fee+' per session.';
-  const pNote=poolNote(occ.location||prog.location);
-  return'Hi '+parent+', I hope you are doing well. My next '+prog.name+' will be on '+fdl(occ.date)+(ts?' at '+ts:'')+(loc?' at '+loc:'')+'. '+feeSection+pNote+'\n\nBest greetings, MIZE';
-}
+  const discountCoupon = prog.discountCoupon||'';
+  const discountedFee = Math.max(0, fee-50);
+  const poolFee = occ.poolFee||prog.poolFee||0;
+  const poolFeeLine = poolFee>0 ? '\n\nThere is a $'+poolFee+' pool fee for the host family to provide the venue in good condition for our goalie session. Please send this by venmo to my account @MIZE77 or by your preferred method of payment.' : '';
+  const jakeLine = poolNote(occ.location||prog.location);
+  const shortName = prog.name.split(/\s*[–—-]\s*/)[0].replace(/\s*\d+\s*$/, '').trim();
+  const sessionDate = new Date((occ.date||'').slice(0,10)+'T12:00:00');
+  const weekday = sessionDate.toLocaleDateString('en-US',{weekday:'long'});
+  const dateMMDD = sessionDate.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit'});
+  const tsStr = ts ? ' '+ts : '';
+  const locStr = loc ? ' at '+loc : '';
 
+  let feeSection;
+  if(a.hasPackage && a.packageRemaining>0 && a.couponCode) {
+    feeSection = 'You still have '+a.packageRemaining+' session'+(a.packageRemaining!==1?'s':'')+' left with your Goalie Performance Package. If '+goalie+' would like to join this session please '+(isHP?'text me to reserve the spot and I will confirm by text if it is still available.':'sign up at www.theperfectgoalie.com and use your coupon code '+a.couponCode+' at the checkout so that the fee gets waived.');
+  } else if(a.hasPackage && a.packageRemaining>0) {
+    feeSection = 'You still have '+a.packageRemaining+' session'+(a.packageRemaining!==1?'s':'')+' left with your Goalie Performance Package. If '+goalie+' would like to join this session please text me to reserve the spot and I will confirm by text if it is still available.';
+  } else if(a.hasPackage && a.packageRemaining===0) {
+    const signupLine = isHP ? 'If '+goalie+' would like to join this session please text me to reserve the spot and I will confirm by text if it is still available.' : 'If '+goalie+' would like to participate please sign up online at www.theperfectgoalie.com. The fee is $'+fee+' per session.';
+    feeSection = signupLine+'\n\nYou could also purchase another Goalie Performance Package again for $750 for 6 group sessions to bring the fee down to $125 per session.';
+  } else {
+    const discountLine = discountCoupon ? '\n\nUse coupon code '+discountCoupon+' at checkout to save $50 ($'+discountedFee+' total).' : '';
+    feeSection = 'If '+goalie+' would like to participate please sign up online at www.theperfectgoalie.com. The fee is $'+fee+' per session.'+discountLine;
+  }
+
+  const pkgOfferLine = _showPkgOffer && !a.hasPackage ? '\n\nYou can also buy a Goalie Performance Package for six goalie sessions within 15 weeks for a total of $750 which brings down the fee per session to $125.' : '';
+
+  return 'Hi '+parent+', I hope you are doing well. My next '+shortName+' will be on '+weekday+', '+dateMMDD+tsStr+locStr+'. '+feeSection+poolFeeLine+jakeLine+pkgOfferLine+'\n\nBest greetings, MIZE';
+}
 
 function buildCoach(ev){
   const coaches=data.coaches||[];
@@ -515,12 +584,13 @@ function buildCoach(ev){
   const allC=allIds.map(id=>coaches.find(c=>c.id===id)).filter(Boolean);
   if(!allC.length)return'';
   const names=allC.map(c=>c.nickname||c.firstname||'Coach').join(', ');
-  const ts=ev.startTime?ft(ev.startTime)+(ev.endTime?' - '+ft(ev.endTime):''):'';
+  const ts = timeRange(ev.startTime, ev.endTime, '90 min');
   const loc=[ev.location,ev.address].filter(Boolean).join(', ');
   const det=[fdl(ev.date),ts,loc,ev.name].filter(Boolean).join(' · ');
   const pl=!ev.isRemote?'\n\nPlease try to be present already 5-10 minutes before the start of the session and make sure that you are leaving the location as organized and a little bit cleaner as before.':'';
-  return'Hi '+names+',\n\nThis is to confirm your coaching assignment for the following session:\n\n'+det+pl+'\n\nThank you and see you there!\nMIZE';
+  return 'Hi '+names+',\n\nThis is to confirm your coaching assignment for the following session:\n\n'+det+pl+'\n\nThank you and see you there!\nMIZE';
 }
+
 
 function showMsg(title, text, phone) {
   curMsg = text;
