@@ -727,10 +727,20 @@ function addNote() {
   const text = ta.value.trim();
   if(!text) return;
   const notes = getNotes();
-  notes.unshift({ text, ts: Date.now() });
+  notes.unshift({ id: 'phone_' + Date.now(), text, ts: Date.now(), source: 'phone', done: false });
   saveNotes(notes);
   ta.value = '';
   renderNotesList();
+  // Push to Gist so GSM can see it
+  pushNotesToGist(notes);
+}
+
+function pushNotesToGist(notesList) {
+  fetch('https://api.github.com/gists/'+GIST_ID, {
+    method: 'PATCH',
+    headers: { 'Authorization': 'token '+GIST_TOKEN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: { 'mize_schedule.json': { content: JSON.stringify({...data, notes: notesList}) } } })
+  }).catch(e => console.log('Notes sync failed:', e));
 }
 
 function deleteNote(idx) {
@@ -738,6 +748,7 @@ function deleteNote(idx) {
   notes.splice(idx, 1);
   saveNotes(notes);
   renderNotesList();
+  pushNotesToGist(notes);
 }
 
 function sendNotesToClaude() {
