@@ -751,6 +751,17 @@ function deleteNote(idx) {
   pushNotesToGist(notes);
 }
 
+function syncAllNotesToGist() {
+  const notes = getNotes();
+  const btn = document.getElementById('syncGistBtn');
+  if(btn) { btn.textContent = 'Syncing...'; btn.disabled = true; }
+  pushNotesToGist(notes.map(n => ({...n, source:'phone'})));
+  setTimeout(() => {
+    if(btn) { btn.textContent = `✓ Synced ${notes.length} note${notes.length!==1?'s':''}!`; btn.disabled = false; }
+    setTimeout(() => { if(btn) btn.textContent = '⟳ Sync Notes to GSM'; }, 2000);
+  }, 1500);
+}
+
 function sendNotesToClaude() {
   const notes = getNotes();
   if(!notes.length) { alert('No notes to send.'); return; }
@@ -1158,7 +1169,8 @@ setInterval(loadData,5*60*1000);
   <!-- Saved notes -->
   <div id="notesList" style="flex:1;overflow-y:auto"></div>
   <!-- Send to Claude -->
-  <button onclick="sendNotesToClaude()" style="width:100%;margin-top:12px;padding:14px;border-radius:12px;background:rgba(91,141,238,0.15);border:1px solid rgba(91,141,238,0.3);color:#5b8dee;font-size:14px;font-weight:700;cursor:pointer">📋 Copy & Open Claude</button>
+  <button onclick="syncAllNotesToGist()" id="syncGistBtn" style="width:100%;margin-top:8px;padding:14px;border-radius:12px;background:rgba(0,212,170,0.15);border:1px solid rgba(0,212,170,0.3);color:#00d4aa;font-size:14px;font-weight:700;cursor:pointer">⟳ Sync Notes to GSM</button>
+  <button onclick="sendNotesToClaude()" style="width:100%;margin-top:8px;padding:14px;border-radius:12px;background:rgba(91,141,238,0.15);border:1px solid rgba(91,141,238,0.3);color:#5b8dee;font-size:14px;font-weight:700;cursor:pointer">📋 Copy & Open Claude</button>
 </div>
 </body>
 </html>
