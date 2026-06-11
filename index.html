@@ -746,12 +746,15 @@ function addNote() {
   const text = ta.value.trim();
   if(!text) return;
   const notes = getNotes();
-  notes.unshift({ id: 'phone_' + Date.now(), text, ts: Date.now(), source: 'phone', done: false });
-  saveNotes(notes);
+  const newNote = { id: 'phone_' + Date.now(), text, ts: Date.now(), source: 'phone', done: false };
+  notes.unshift(newNote);
   ta.value = '';
-  renderNotesList();
-  // Push to Gist so GSM can see it
-  pushNotesToGist(notes);
+  // Push to Gist then clear from phone
+  pushNotesToGist(notes.map(n => ({...n, source:'phone'})));
+  setTimeout(() => {
+    saveNotes([]);
+    renderNotesList();
+  }, 1500);
 }
 
 function pushNotesToGist(notesList) {
@@ -783,8 +786,11 @@ function syncAllNotesToGist() {
   const btn = document.getElementById('syncGistBtn');
   if(btn) { btn.textContent = 'Syncing...'; btn.disabled = true; }
   pushNotesToGist(notes.map(n => ({...n, source:'phone'})));
+  // Clear notes from phone immediately after sync
   setTimeout(() => {
-    if(btn) { btn.textContent = `✓ Synced ${notes.length} note${notes.length!==1?'s':''}!`; btn.disabled = false; }
+    saveNotes([]);
+    renderNotesList();
+    if(btn) { btn.textContent = `✓ Synced & cleared!`; btn.disabled = false; }
     setTimeout(() => { if(btn) btn.textContent = '⟳ Sync Notes to GSM'; }, 2000);
   }, 1500);
 }
