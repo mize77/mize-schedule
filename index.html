@@ -1212,6 +1212,7 @@ setInterval(loadData,5*60*1000);
   <div id="notesList" style="flex:1;overflow-y:auto"></div>
   <!-- Send to Claude -->
   <button onclick="syncAllNotesToGist()" id="syncGistBtn" style="width:100%;margin-top:8px;padding:14px;border-radius:12px;background:rgba(0,212,170,0.15);border:1px solid rgba(0,212,170,0.3);color:#00d4aa;font-size:14px;font-weight:700;cursor:pointer">⟳ Sync Notes to GSM</button>
+  <button onclick="if(confirm('Delete all notes from phone?')){saveNotes([]);renderNotesList();}" style="width:100%;margin-top:8px;padding:14px;border-radius:12px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#ef4444;font-size:14px;font-weight:700;cursor:pointer">🗑 Delete All Notes</button>
 </div>
 </body>
 </html>
