@@ -778,23 +778,22 @@ function deleteNote(idx) {
 
 function syncAllNotesToGist() {
   const notes = getNotes();
+  const btn = document.getElementById('syncGistBtn');
   if(!notes.length) {
-    const btn = document.getElementById('syncGistBtn');
     if(btn) { btn.textContent = '✓ No notes to sync'; setTimeout(()=>btn.textContent='⟳ Sync Notes to GSM',2000); }
     return;
   }
-  const btn = document.getElementById('syncGistBtn');
   if(btn) { btn.textContent = 'Syncing...'; btn.disabled = true; }
-  // Step 1: push notes to Gist for GSM to read
+  // Push notes to Gist for GSM to read
   pushNotesToGist(notes.map(n => ({...n, source:'phone'}))).then(() => {
-    // Step 2: clear notes from Gist so they don't come back on next loadData
-    pushNotesToGist([]).then(() => {
-      // Step 3: clear localStorage
-      saveNotes([]);
-      renderNotesList();
-      if(btn) { btn.textContent = '✓ Synced & cleared!'; btn.disabled = false; }
-      setTimeout(() => { if(btn) btn.textContent = '⟳ Sync Notes to GSM'; }, 2000);
-    });
+    // Clear from phone localStorage — phone never reads Gist notes back
+    saveNotes([]);
+    renderNotesList();
+    if(btn) { btn.textContent = '✓ Synced & cleared!'; btn.disabled = false; }
+    setTimeout(() => { if(btn) btn.textContent = '⟳ Sync Notes to GSM'; }, 2000);
+  }).catch(() => {
+    if(btn) { btn.textContent = '✗ Sync failed'; btn.disabled = false; }
+    setTimeout(() => { if(btn) btn.textContent = '⟳ Sync Notes to GSM'; }, 2000);
   });
 }
 
