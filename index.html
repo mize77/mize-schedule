@@ -793,11 +793,13 @@ async function syncAllNotesToGist() {
     return;
   }
   if(btn) { btn.textContent = 'Syncing...'; btn.disabled = true; }
+  // Push notes to Gist — GSM will read and manage them from there
   const ok = await pushNotesToGist(notes.map(n => ({...n, source:'phone'})));
   if(ok) {
+    // Clear phone localStorage only — Gist keeps notes until GSM reads them
     saveNotes([]);
     renderNotesList();
-    if(btn) { btn.textContent = '✓ Synced & cleared!'; btn.disabled = false; }
+    if(btn) { btn.textContent = '✓ Synced!'; btn.disabled = false; }
   } else {
     if(btn) { btn.textContent = '✗ Failed — try again'; btn.disabled = false; }
   }
