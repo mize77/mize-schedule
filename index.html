@@ -697,18 +697,19 @@ function saveNotes(notes) {
 
 function showNotes() {
   document.getElementById('notesOverlay').style.display = 'flex';
-  renderNotesList(); // show immediately from cache
-  // Then pull latest from Gist and re-render
+  renderNotesList(); // show immediately from localStorage
+  // Pull latest from Gist and update localStorage
   fetch('https://api.github.com/gists/'+GIST_ID, {
     headers: { 'Authorization': 'token '+GIST_TOKEN, 'Accept': 'application/vnd.github+json' }
   }).then(r=>r.json()).then(gist=>{
     try {
-      const content = JSON.parse(gist.files?.['mize_schedule.json']?.content||'{}');
-      if(Array.isArray(content.notes)) {
-        saveNotes(content.notes);
+      const parsed = JSON.parse(gist.files?.['mize_schedule.json']?.content||'{}');
+      // Only update if Gist has notes (don't wipe local notes if Gist key missing)
+      if(Array.isArray(parsed.notes) && parsed.notes.length > 0) {
+        saveNotes(parsed.notes);
         renderNotesList();
       }
-    } catch(e) {}
+    } catch(e) { console.log('Notes pull error:', e); }
   }).catch(()=>{});
 }
 function hideNotes() {
@@ -752,11 +753,19 @@ function addNote() {
 }
 
 function pushNotesToGist(notesList) {
+  // Fetch current Gist first so we only update the notes key, not overwrite schedule data
   fetch('https://api.github.com/gists/'+GIST_ID, {
-    method: 'PATCH',
-    headers: { 'Authorization': 'token '+GIST_TOKEN, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ files: { 'mize_schedule.json': { content: JSON.stringify({...data, notes: notesList}) } } })
-  }).catch(e => console.log('Notes sync failed:', e));
+    headers: { 'Authorization': 'token '+GIST_TOKEN, 'Accept': 'application/vnd.github+json' }
+  }).then(r=>r.json()).then(gist=>{
+    let current = {};
+    try { current = JSON.parse(gist.files?.['mize_schedule.json']?.content||'{}'); } catch(e){}
+    current.notes = notesList;
+    return fetch('https://api.github.com/gists/'+GIST_ID, {
+      method: 'PATCH',
+      headers: { 'Authorization': 'token '+GIST_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files: { 'mize_schedule.json': { content: JSON.stringify(current) } } })
+    });
+  }).catch(e => console.log('Notes push failed:', e));
 }
 
 function deleteNote(idx) {
