@@ -697,7 +697,19 @@ function saveNotes(notes) {
 
 function showNotes() {
   document.getElementById('notesOverlay').style.display = 'flex';
-  renderNotesList();
+  renderNotesList(); // show immediately from cache
+  // Then pull latest from Gist and re-render
+  fetch('https://api.github.com/gists/'+GIST_ID, {
+    headers: { 'Authorization': 'token '+GIST_TOKEN, 'Accept': 'application/vnd.github+json' }
+  }).then(r=>r.json()).then(gist=>{
+    try {
+      const content = JSON.parse(gist.files?.['mize_schedule.json']?.content||'{}');
+      if(Array.isArray(content.notes)) {
+        saveNotes(content.notes);
+        renderNotesList();
+      }
+    } catch(e) {}
+  }).catch(()=>{});
 }
 function hideNotes() {
   document.getElementById('notesOverlay').style.display = 'none';
@@ -707,19 +719,23 @@ function hideNotes() {
 function renderNotesList() {
   const notes = getNotes();
   const list = document.getElementById('notesList');
+  const active = notes.filter(n => !n.done);
+  const done = notes.filter(n => n.done);
   if(!notes.length) {
     list.innerHTML = '<div style="color:#555;font-size:13px;text-align:center;padding:20px">No notes yet</div>';
     return;
   }
-  list.innerHTML = notes.map((n,i) => `
-    <div style="background:#1a1f27;border:1px solid #2a2f3a;border-radius:10px;padding:12px;margin-bottom:8px">
+  const renderNote = (n, i) => `
+    <div style="background:#1a1f27;border:1px solid ${n.done?'#2a2f3a':'#2e3a4e'};border-radius:10px;padding:12px;margin-bottom:8px;opacity:${n.done?0.5:1}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-        <div style="font-size:11px;color:#555;margin-bottom:6px">${new Date(n.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+        <div style="font-size:11px;color:#555;margin-bottom:6px">${new Date(n.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}${n.done?' · ✓ Done':''}</div>
         <button onclick="deleteNote(${i})" style="font-size:11px;color:#555;background:transparent;border:none;cursor:pointer;flex-shrink:0">✕</button>
       </div>
-      <div style="font-size:13px;color:#c8d0dc;white-space:pre-wrap;word-break:break-word">${escHtml(n.text)}</div>
-    </div>
-  `).join('');
+      <div style="font-size:13px;color:${n.done?'#555':'#c8d0dc'};white-space:pre-wrap;word-break:break-word;text-decoration:${n.done?'line-through':'none'}">${escHtml(n.text)}</div>
+    </div>`;
+  list.innerHTML = active.map((n,i) => renderNote(n, notes.indexOf(n))).join('')
+    + (done.length ? `<div style="font-size:10px;color:#444;text-transform:uppercase;letter-spacing:0.06em;margin:12px 0 6px">Completed (${done.length})</div>`
+      + done.map(n => renderNote(n, notes.indexOf(n))).join('') : '');
 }
 
 function addNote() {
