@@ -753,19 +753,28 @@ function addNote() {
   // Show as pending sync — user should tap Sync to transfer to GSM
 }
 
-function pushNotesToGist(notesList) {
-  return fetch('https://api.github.com/gists/'+GIST_ID, {
-    headers: { 'Authorization': 'token '+GIST_TOKEN, 'Accept': 'application/vnd.github+json' }
-  }).then(r=>r.json()).then(gist=>{
+async function pushNotesToGist(notesList) {
+  try {
+    // Read current Gist
+    const r = await fetch('https://api.github.com/gists/'+GIST_ID, {
+      headers: { 'Authorization': 'token '+GIST_TOKEN, 'Accept': 'application/vnd.github+json' }
+    });
+    const gist = await r.json();
     let current = {};
     try { current = JSON.parse(gist.files?.['mize_schedule.json']?.content||'{}'); } catch(e){}
+    // Update only the notes key
     current.notes = notesList;
-    return fetch('https://api.github.com/gists/'+GIST_ID, {
+    // Write back
+    const w = await fetch('https://api.github.com/gists/'+GIST_ID, {
       method: 'PATCH',
       headers: { 'Authorization': 'token '+GIST_TOKEN, 'Content-Type': 'application/json' },
       body: JSON.stringify({ files: { 'mize_schedule.json': { content: JSON.stringify(current) } } })
     });
-  }).catch(e => console.log('Notes push failed:', e));
+    return w.ok;
+  } catch(e) {
+    console.log('Notes push failed:', e);
+    return false;
+  }
 }
 
 function deleteNote(idx) {
@@ -776,7 +785,7 @@ function deleteNote(idx) {
   pushNotesToGist(notes);
 }
 
-function syncAllNotesToGist() {
+async function syncAllNotesToGist() {
   const notes = getNotes();
   const btn = document.getElementById('syncGistBtn');
   if(!notes.length) {
@@ -784,17 +793,15 @@ function syncAllNotesToGist() {
     return;
   }
   if(btn) { btn.textContent = 'Syncing...'; btn.disabled = true; }
-  // Push notes to Gist for GSM to read
-  pushNotesToGist(notes.map(n => ({...n, source:'phone'}))).then(() => {
-    // Clear from phone localStorage — phone never reads Gist notes back
+  const ok = await pushNotesToGist(notes.map(n => ({...n, source:'phone'})));
+  if(ok) {
     saveNotes([]);
     renderNotesList();
     if(btn) { btn.textContent = '✓ Synced & cleared!'; btn.disabled = false; }
-    setTimeout(() => { if(btn) btn.textContent = '⟳ Sync Notes to GSM'; }, 2000);
-  }).catch(() => {
-    if(btn) { btn.textContent = '✗ Sync failed'; btn.disabled = false; }
-    setTimeout(() => { if(btn) btn.textContent = '⟳ Sync Notes to GSM'; }, 2000);
-  });
+  } else {
+    if(btn) { btn.textContent = '✗ Failed — try again'; btn.disabled = false; }
+  }
+  setTimeout(() => { if(btn) btn.textContent = '⟳ Sync Notes to GSM'; }, 2500);
 }
 
 function sendNotesToClaude() {
@@ -1205,7 +1212,6 @@ setInterval(loadData,5*60*1000);
   <div id="notesList" style="flex:1;overflow-y:auto"></div>
   <!-- Send to Claude -->
   <button onclick="syncAllNotesToGist()" id="syncGistBtn" style="width:100%;margin-top:8px;padding:14px;border-radius:12px;background:rgba(0,212,170,0.15);border:1px solid rgba(0,212,170,0.3);color:#00d4aa;font-size:14px;font-weight:700;cursor:pointer">⟳ Sync Notes to GSM</button>
-  <button onclick="sendNotesToClaude()" style="width:100%;margin-top:8px;padding:14px;border-radius:12px;background:rgba(91,141,238,0.15);border:1px solid rgba(91,141,238,0.3);color:#5b8dee;font-size:14px;font-weight:700;cursor:pointer">📋 Copy & Open Claude</button>
 </div>
 </body>
 </html>
