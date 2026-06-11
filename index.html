@@ -206,6 +206,8 @@ async function loadData(){
       });
     }
     data=fresh;
+    // Sync notes from Gist to localStorage — removes completed notes deleted from GSM
+    if(Array.isArray(fresh.notes)) saveNotes(fresh.notes);
     document.getElementById('last-upd').textContent='Updated '+new Date(data.savedAt||Date.now()).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
     render();
   }catch(e){
