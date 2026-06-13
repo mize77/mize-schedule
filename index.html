@@ -519,12 +519,32 @@ function buildConfirmForAthlete(a, ev) {
     const ts = timeRange(s.time, s.endTime, s.length);
     const loc=[s.poolName,s.poolAddress].filter(Boolean).join(', ');
     const isSemi = (s.format||'').startsWith('Semi');
-    const totalFee = isSemi ? (s.fee||0) : (s.totalFee||s.fee||0);
-    const unpaid=!s.paid&&totalFee?'\n\nPlease venmo the fee of $'+totalFee+' to my account @MIZE77 to reserve the time slot.':'';
+
+    // Calculate full total: session + mileage + pool (matching GSM exactly)
+    const sessionFee = Number(s.fee||0);
+    const mileageFee = Number(s.mileageFee||0);
+    const poolFeeAmt = Number(s.poolFee||0);
+    const fullTotal  = sessionFee + mileageFee + poolFeeAmt;
+
+    // Fee breakdown for transparency
+    const feeParts = [];
+    if(sessionFee > 0) feeParts.push('$'+sessionFee+' session fee');
+    if(mileageFee > 0) feeParts.push('$'+mileageFee+' mileage');
+    if(poolFeeAmt > 0) feeParts.push('$'+poolFeeAmt+' pool fee');
+    const feeBreakdown = feeParts.length > 1 ? ' ('+feeParts.join(' + ')+')' : '';
+
+    // For semi-private check correct paid status per athlete
+    const isPaid = isSemi
+      ? (a.id===s.athleteId ? s.paid : s.paid2)
+      : s.paid;
+
+    const unpaid = !isPaid && fullTotal > 0
+      ? '\n\nPlease venmo the fee of $'+fullTotal+feeBreakdown+' to my account @MIZE77 to reserve the time slot.'
+      : '';
     const pNote=poolNote(s.poolName, a.id, []);
     const locStr = loc ? ' at '+loc : '';
     const tsStr = ts ? ' '+ts : '';
-    return 'Hi '+parentFirst+', this is to confirm the participation of '+goalie+' in the '+(s.type||'Private Session')+' on '+fdl(s.date)+tsStr+locStr+'.'+pNote+unpaid+'\n\nSee you there!\nMIZE';
+    return 'Hi '+parentFirst+', this is to confirm the participation of '+goalie+' in the '+(s.type||'Private Session')+' on '+fdl(s.date)+tsStr+locStr+'.'+pNote+unpaid+'\n\nSee you there, MIZE';
   }
 
   if(ev.kind==='meeting') {
