@@ -18,6 +18,13 @@
 
 const MIZE_MESSAGES = (function() {
 
+  // ── Name helpers ─────────────────────────────────────────────
+  // Always use nickname if available, otherwise first name
+  function preferredName(fullName, nickname) {
+    if(nickname && nickname.trim()) return nickname.trim();
+    return (fullName||'').split(' ')[0] || '[Name]';
+  }
+
   // ── Pool notes ──────────────────────────────────────────────
   function poolNote(locationStr) {
     const loc = (locationStr||'').toLowerCase();
@@ -108,9 +115,9 @@ const MIZE_MESSAGES = (function() {
   // ═══════════════════════════════════════════════════════
   // PRIVATE SESSION CONFIRMATION
   // ═══════════════════════════════════════════════════════
-  function privateConfirm(session, athleteName, parentName, isAthlete1) {
-    const parent = (parentName || '[Parent Name]').split(' ')[0];
-    const goalie = (athleteName || '').split(' ')[0];
+  function privateConfirm(session, athleteName, parentName, isAthlete1, parentNickname, athleteNickname) {
+    const parent = preferredName(parentName, parentNickname);
+    const goalie = preferredName(athleteName, athleteNickname);
     const loc = [session.poolName, session.poolAddress].filter(Boolean).join(', ');
     const locStr = loc ? ' at ' + loc : '';
     const ts = timeRange(session.time, session.endTime, session.length);
@@ -139,9 +146,9 @@ const MIZE_MESSAGES = (function() {
   // ═══════════════════════════════════════════════════════
   // GROUP SESSION CONFIRMATION
   // ═══════════════════════════════════════════════════════
-  function groupConfirm(prog, occ, athleteName, parentName, isPaid) {
-    const parent = (parentName || '[Parent Name]').split(' ')[0];
-    const goalie = (athleteName || '').split(' ')[0];
+  function groupConfirm(prog, occ, athleteName, parentName, isPaid, parentNickname, athleteNickname) {
+    const parent = preferredName(parentName, parentNickname);
+    const goalie = preferredName(athleteName, athleteNickname);
     const loc = [occ.location||prog.location, occ.address||prog.address].filter(Boolean).join(', ');
     const locStr = loc ? ' at ' + loc : '';
     const ts = timeRange(occ.startTime||prog.startTime, occ.endTime||prog.endTime, '90 min');
@@ -161,9 +168,9 @@ const MIZE_MESSAGES = (function() {
   // ═══════════════════════════════════════════════════════
   // GROUP SESSION INVITATION
   // ═══════════════════════════════════════════════════════
-  function groupInvite(prog, occ, athleteName, parentName, hasPackage, packageRemaining, couponCode, showPkgOffer) {
-    const parent = (parentName || '[Parent Name]').split(' ')[0];
-    const goalie = (athleteName || '').split(' ')[0];
+  function groupInvite(prog, occ, athleteName, parentName, hasPackage, packageRemaining, couponCode, showPkgOffer, parentNickname, athleteNickname) {
+    const parent = preferredName(parentName, parentNickname);
+    const goalie = preferredName(athleteName, athleteNickname);
     const location = occ.location || prog.location || '[Pool Location]';
     const ts = timeRange(occ.startTime||prog.startTime, occ.endTime||prog.endTime, '90 min');
     const tsStr = ts ? ' ' + ts : '';
@@ -213,8 +220,8 @@ const MIZE_MESSAGES = (function() {
   // ═══════════════════════════════════════════════════════
   // MEETING CONFIRMATION
   // ═══════════════════════════════════════════════════════
-  function meetingConfirm(meeting, athleteName, parentName) {
-    const parent = (parentName || '[Parent Name]').split(' ')[0];
+  function meetingConfirm(meeting, athleteName, parentName, parentNickname) {
+    const parent = preferredName(parentName, parentNickname);
     const tl = meeting.meetingType === 'Other' ? meeting.otherType : meeting.meetingType;
     const ts = timeRange(meeting.time, '', meeting.length);
     const tsStr = ts ? ' ' + ts : '';
@@ -234,10 +241,10 @@ const MIZE_MESSAGES = (function() {
   // ═══════════════════════════════════════════════════════
   // COACH CONFIRMATION
   // ═══════════════════════════════════════════════════════
-  function coachConfirm(coachName, eventName, date, startTime, endTime, location, address, isRemote) {
+  function coachConfirm(coachName, eventName, date, startTime, endTime, location, address, isRemote, coachNickname) {
     const locFull = [location, address].filter(Boolean).join(', ');
     const ts = timeRange(startTime, endTime, '90 min');
-    return 'Hi ' + coachName + ', this is to confirm your coaching assignment'
+    return 'Hi ' + preferredName(coachName, coachNickname) + ', this is to confirm your coaching assignment'
       + (eventName ? ' for ' + eventName : '')
       + ' on ' + fmtDate(date)
       + (ts ? ' ' + ts : '')
@@ -253,6 +260,7 @@ const MIZE_MESSAGES = (function() {
     groupInvite,
     meetingConfirm,
     coachConfirm,
+    preferredName,
     // Utilities (exported for reuse)
     poolNote,
     poolFeeLine,
@@ -779,7 +787,7 @@ function buildConfirmForAthlete(a, ev) {
     const isSemi = (s.format||'').startsWith('Semi');
     const isAth1 = a.id === s.athleteId;
     if(typeof MIZE_MESSAGES !== 'undefined') {
-      return MIZE_MESSAGES.privateConfirm(s, a.name||athName(a), a.parentName||parentName(a), isAth1);
+      return MIZE_MESSAGES.privateConfirm(s, a.name||athName(a), a.parentName||parentName(a), isAth1, a.parentNickname, a.nickname);
     }
     // Fallback
     const ts = timeRange(s.time, s.endTime, s.length);
