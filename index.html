@@ -25,6 +25,21 @@ const MIZE_MESSAGES = (function() {
     return (fullName||'').split(' ')[0] || '[Name]';
   }
 
+  // Build the "Hi X" greeting based on which recipients are selected.
+  // Athlete name always comes first when both are addressed.
+  // messageToParent / messageToAthlete: booleans from athlete record.
+  // Defaults: if both are false/undefined, fall back to parent only (existing behavior).
+  function recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete) {
+    const toParent  = messageToParent !== false;   // default true
+    const toAthlete = messageToAthlete === true;    // default false
+    const athlete = preferredName(athleteName, athleteNickname);
+    const parent   = preferredName(parentName, parentNickname);
+
+    if(toAthlete && toParent) return athlete + ' and ' + parent;
+    if(toAthlete && !toParent) return athlete;
+    return parent; // parent only (default / explicit)
+  }
+
   // ── Pool notes ──────────────────────────────────────────────
   function poolNote(locationStr) {
     const loc = (locationStr||'').toLowerCase();
@@ -115,9 +130,9 @@ const MIZE_MESSAGES = (function() {
   // ═══════════════════════════════════════════════════════
   // PRIVATE SESSION CONFIRMATION
   // ═══════════════════════════════════════════════════════
-  function privateConfirm(session, athleteName, parentName, isAthlete1, parentNickname, athleteNickname) {
-    const parent = preferredName(parentName, parentNickname);
+  function privateConfirm(session, athleteName, parentName, isAthlete1, parentNickname, athleteNickname, messageToParent, messageToAthlete) {
     const goalie = preferredName(athleteName, athleteNickname);
+    const greeting = recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete);
     const loc = [session.poolName, session.poolAddress].filter(Boolean).join(', ');
     const locStr = loc ? ' at ' + loc : '';
     const ts = timeRange(session.time, session.endTime, session.length);
@@ -137,7 +152,7 @@ const MIZE_MESSAGES = (function() {
     const feeLine = unpaidLine(fullTotal, sessionFee, mileageFee, poolFeeAmt, isPaid);
     const poolLine = poolNote(session.poolName);
 
-    return 'Hi ' + parent + ', this is to confirm the participation of ' + goalie
+    return 'Hi ' + greeting + ', this is to confirm the participation of ' + goalie
       + ' in ' + day + ' ' + (session.type||'Private Session') + tsStr + locStr + '.'
       + poolLine + feeLine
       + '\n\nSee you there, MIZE';
@@ -146,9 +161,9 @@ const MIZE_MESSAGES = (function() {
   // ═══════════════════════════════════════════════════════
   // GROUP SESSION CONFIRMATION
   // ═══════════════════════════════════════════════════════
-  function groupConfirm(prog, occ, athleteName, parentName, isPaid, parentNickname, athleteNickname) {
-    const parent = preferredName(parentName, parentNickname);
+  function groupConfirm(prog, occ, athleteName, parentName, isPaid, parentNickname, athleteNickname, messageToParent, messageToAthlete) {
     const goalie = preferredName(athleteName, athleteNickname);
+    const greeting = recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete);
     const loc = [occ.location||prog.location, occ.address||prog.address].filter(Boolean).join(', ');
     const locStr = loc ? ' at ' + loc : '';
     const ts = timeRange(occ.startTime||prog.startTime, occ.endTime||prog.endTime, '90 min');
@@ -159,7 +174,7 @@ const MIZE_MESSAGES = (function() {
     const pFee = Number(occ.poolFee||prog.poolFee||0);
     const pLine = poolFeeLine(pFee) + poolNote(occ.location||prog.location);
 
-    return 'Hi ' + parent + ', this is to confirm the participation of ' + goalie
+    return 'Hi ' + greeting + ', this is to confirm the participation of ' + goalie
       + ' in ' + day + ' goalie session' + tsStr + locStr + '.'
       + pLine + feeLine
       + '\n\nSee you there, MIZE';
@@ -168,9 +183,10 @@ const MIZE_MESSAGES = (function() {
   // ═══════════════════════════════════════════════════════
   // GROUP SESSION INVITATION
   // ═══════════════════════════════════════════════════════
-  function groupInvite(prog, occ, athleteName, parentName, hasPackage, packageRemaining, couponCode, showPkgOffer, parentNickname, athleteNickname, newPackageCoupon) {
+  function groupInvite(prog, occ, athleteName, parentName, hasPackage, packageRemaining, couponCode, showPkgOffer, parentNickname, athleteNickname, newPackageCoupon, hasFreePackage, freePackageCouponCode, messageToParent, messageToAthlete) {
     const parent = preferredName(parentName, parentNickname);
     const goalie = preferredName(athleteName, athleteNickname);
+    const greeting = recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete);
     const location = occ.location || prog.location || '[Pool Location]';
     const ts = timeRange(occ.startTime||prog.startTime, occ.endTime||prog.endTime, '90 min');
     const tsStr = ts ? ' ' + ts : '';
@@ -187,7 +203,14 @@ const MIZE_MESSAGES = (function() {
     const jakeLine = poolNote(location);
 
     let feeSection;
-    if(hasPackage && packageRemaining > 0 && couponCode) {
+    if(hasFreePackage) {
+      // Free Participation Package — highest priority, always free until deactivated
+      feeSection = goalie + ' has a Goalie Free Participation Package, so '
+        + (isHP
+          ? 'if ' + goalie + ' would like to join this session please text me to reserve the spot and I will confirm by text if it is still available.'
+          : ('this session is free. Please sign up at www.theperfectgoalie.com'
+              + (freePackageCouponCode ? ' and use your coupon code ' + freePackageCouponCode + ' at checkout so that the fee gets waived.' : ' and let me know so I can reserve the spot.')));
+    } else if(hasPackage && packageRemaining > 0 && couponCode) {
       feeSection = 'You still have ' + packageRemaining + ' session' + (packageRemaining !== 1 ? 's' : '')
         + ' left with your Goalie Performance Package. If ' + goalie + ' would like to join this session please '
         + (isHP
@@ -210,11 +233,11 @@ const MIZE_MESSAGES = (function() {
       feeSection = 'If ' + goalie + ' would like to participate please sign up online at www.theperfectgoalie.com. The fee is $' + fee + ' per session.' + discountLine;
     }
 
-    const pkgOfferLine = showPkgOffer && !hasPackage
+    const pkgOfferLine = (showPkgOffer && !hasPackage && !hasFreePackage)
       ? '\n\nYou can also buy a Goalie Performance Package for six goalie sessions within 15 weeks for a total of $750 which brings down the fee per session to $125.'
       : '';
 
-    return 'Hi ' + parent + ', I hope you are doing well. My next ' + shortName
+    return 'Hi ' + greeting + ', I hope you are doing well. My next ' + shortName
       + ' will be on ' + weekday + ', ' + dateMMDD + tsStr + ' at ' + location + '. '
       + feeSection + pLine + jakeLine + pkgOfferLine
       + '\n\nBest greetings, MIZE';
@@ -264,6 +287,7 @@ const MIZE_MESSAGES = (function() {
     meetingConfirm,
     coachConfirm,
     preferredName,
+    recipientGreeting,
     // Utilities (exported for reuse)
     poolNote,
     poolFeeLine,
