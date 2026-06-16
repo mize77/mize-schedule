@@ -130,12 +130,13 @@ const MIZE_MESSAGES = (function() {
   // ═══════════════════════════════════════════════════════
   // PRIVATE SESSION CONFIRMATION
   // ═══════════════════════════════════════════════════════
-  function privateConfirm(session, athleteName, parentName, isAthlete1, parentNickname, athleteNickname, messageToParent, messageToAthlete) {
+  function privateConfirm(session, athleteName, parentName, isAthlete1, parentNickname, athleteNickname, messageToParent, messageToAthlete, athleteRegion) {
     const goalie = preferredName(athleteName, athleteNickname);
     const greeting = recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete);
     const loc = [session.poolName, session.poolAddress].filter(Boolean).join(', ');
     const locStr = loc ? ' at ' + loc : '';
-    const ts = timeRange(session.time, session.endTime, session.length);
+    let ts = timeRange(session.time, session.endTime, session.length);
+    if(ts && needsTimezoneClarifier(athleteRegion)) ts = ts + ' (Pacific Time)';
     const tsStr = ts ? ' ' + ts : '';
     const day = dayLabel(session.date);
 
@@ -161,12 +162,13 @@ const MIZE_MESSAGES = (function() {
   // ═══════════════════════════════════════════════════════
   // GROUP SESSION CONFIRMATION
   // ═══════════════════════════════════════════════════════
-  function groupConfirm(prog, occ, athleteName, parentName, isPaid, parentNickname, athleteNickname, messageToParent, messageToAthlete) {
+  function groupConfirm(prog, occ, athleteName, parentName, isPaid, parentNickname, athleteNickname, messageToParent, messageToAthlete, athleteRegion) {
     const goalie = preferredName(athleteName, athleteNickname);
     const greeting = recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete);
     const loc = [occ.location||prog.location, occ.address||prog.address].filter(Boolean).join(', ');
     const locStr = loc ? ' at ' + loc : '';
-    const ts = timeRange(occ.startTime||prog.startTime, occ.endTime||prog.endTime, '90 min');
+    let ts = timeRange(occ.startTime||prog.startTime, occ.endTime||prog.endTime, '90 min');
+    if(ts && needsTimezoneClarifier(athleteRegion)) ts = ts + ' (Pacific Time)';
     const tsStr = ts ? ' ' + ts : '';
     const day = dayLabel(occ.date);
     const sessionFee = Number(prog.sessionFee||175);
@@ -183,12 +185,13 @@ const MIZE_MESSAGES = (function() {
   // ═══════════════════════════════════════════════════════
   // GROUP SESSION INVITATION
   // ═══════════════════════════════════════════════════════
-  function groupInvite(prog, occ, athleteName, parentName, hasPackage, packageRemaining, couponCode, showPkgOffer, parentNickname, athleteNickname, newPackageCoupon, hasFreePackage, freePackageCouponCode, messageToParent, messageToAthlete) {
+  function groupInvite(prog, occ, athleteName, parentName, hasPackage, packageRemaining, couponCode, showPkgOffer, parentNickname, athleteNickname, newPackageCoupon, hasFreePackage, freePackageCouponCode, messageToParent, messageToAthlete, athleteRegion) {
     const parent = preferredName(parentName, parentNickname);
     const goalie = preferredName(athleteName, athleteNickname);
     const greeting = recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete);
     const location = occ.location || prog.location || '[Pool Location]';
-    const ts = timeRange(occ.startTime||prog.startTime, occ.endTime||prog.endTime, '90 min');
+    let ts = timeRange(occ.startTime||prog.startTime, occ.endTime||prog.endTime, '90 min');
+    if(ts && needsTimezoneClarifier(athleteRegion)) ts = ts + ' (Pacific Time)';
     const tsStr = ts ? ' ' + ts : '';
     const sessionDate = new Date((occ.date||'').slice(0,10) + 'T12:00:00');
     const weekday = sessionDate.toLocaleDateString('en-US', {weekday:'long'});
@@ -246,10 +249,20 @@ const MIZE_MESSAGES = (function() {
   // ═══════════════════════════════════════════════════════
   // MEETING CONFIRMATION
   // ═══════════════════════════════════════════════════════
-  function meetingConfirm(meeting, athleteName, parentName, parentNickname) {
+  // Regions known to already be in Pacific Time — no clarifier needed for these.
+  // Anything else (e.g. "US", "International", or unset/unknown) gets "(Pacific Time)"
+  // appended so there's no ambiguity about which timezone the time refers to.
+  const PACIFIC_REGIONS = ['Orange County','San Diego','Manhattan Beach','North Los Angeles','NorCal','Santa Barbara'];
+  function needsTimezoneClarifier(region) {
+    if(!region) return true; // unknown region — be safe, clarify
+    return !PACIFIC_REGIONS.includes(region);
+  }
+
+  function meetingConfirm(meeting, athleteName, parentName, parentNickname, athleteRegion) {
     const parent = preferredName(parentName, parentNickname);
     const tl = meeting.meetingType === 'Other' ? meeting.otherType : meeting.meetingType;
-    const ts = timeRange(meeting.time, '', meeting.length);
+    let ts = timeRange(meeting.time, '', meeting.length);
+    if(ts && needsTimezoneClarifier(athleteRegion)) ts = ts + ' (Pacific Time)';
     const tsStr = ts ? ' ' + ts : '';
     const locStr = meeting.location ? ' at ' + meeting.location : '';
     const feeLine = !meeting.isFree && meeting.fee
@@ -288,6 +301,8 @@ const MIZE_MESSAGES = (function() {
     coachConfirm,
     preferredName,
     recipientGreeting,
+    needsTimezoneClarifier,
+    PACIFIC_REGIONS,
     // Utilities (exported for reuse)
     poolNote,
     poolFeeLine,
