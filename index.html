@@ -168,7 +168,7 @@ const MIZE_MESSAGES = (function() {
   // ═══════════════════════════════════════════════════════
   // GROUP SESSION INVITATION
   // ═══════════════════════════════════════════════════════
-  function groupInvite(prog, occ, athleteName, parentName, hasPackage, packageRemaining, couponCode, showPkgOffer, parentNickname, athleteNickname) {
+  function groupInvite(prog, occ, athleteName, parentName, hasPackage, packageRemaining, couponCode, showPkgOffer, parentNickname, athleteNickname, newPackageCoupon) {
     const parent = preferredName(parentName, parentNickname);
     const goalie = preferredName(athleteName, athleteNickname);
     const location = occ.location || prog.location || '[Pool Location]';
@@ -201,7 +201,10 @@ const MIZE_MESSAGES = (function() {
       const signupLine = isHP
         ? 'If ' + goalie + ' would like to join this session please text me to reserve the spot and I will confirm by text if it is still available.'
         : 'If ' + goalie + ' would like to participate please sign up online at www.theperfectgoalie.com. The fee is $' + fee + ' per session.';
-      feeSection = signupLine + '\n\nYou could also purchase another Goalie Performance Package again for $750 for 6 group sessions to bring the fee down to $125 per session. If you would like to do that pay that fee by venmo to my account @MIZE77 or let me know if you have a different preferred method of payment.';
+      const newPkgCouponLine = newPackageCoupon
+        ? ' Use coupon code ' + newPackageCoupon + ' at checkout to get your new package for free and use your package sessions immediately.'
+        : ' If you would like to do that pay $750 by venmo to @MIZE77 or let me know your preferred payment method.';
+      feeSection = signupLine + '\n\nYour Goalie Performance Package is now used up. You could purchase a new package for $750 for 6 group sessions to bring the fee down to $125 per session.' + newPkgCouponLine;
     } else {
       const discountLine = discountCoupon ? '\n\nUse coupon code ' + discountCoupon + ' at checkout to save $50 ($' + discountedFee + ' total).' : '';
       feeSection = 'If ' + goalie + ' would like to participate please sign up online at www.theperfectgoalie.com. The fee is $' + fee + ' per session.' + discountLine;
