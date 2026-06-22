@@ -1,305 +1,402 @@
 // ═══════════════════════════════════════════════════════════════
 // MIZE SHARED MESSAGE TEMPLATES — messages.js
 // Single source of truth for ALL athlete/coach messages.
-// Loaded by both GSM (goalie_sessions.html) and Phone App (mize_schedule.html).
-// Any message change should ONLY be made here.
+// Loaded by GSM (goalie_sessions.html) and Phone App (index.html on GitHub Pages).
+// Any message change — confirmation, invitation, coach — ONLY goes here.
 // ═══════════════════════════════════════════════════════════════
 
 const MIZE_MESSAGES = (function() {
 
-  // ── Name helpers ─────────────────────────────────────────────
-  // Always use nickname if available, otherwise first name
+  // ── Name helpers ─────────────────────────────────────────────────────────
+  // Always prefer nickname, fall back to first name of full name.
   function preferredName(fullName, nickname) {
     if(nickname && nickname.trim()) return nickname.trim();
     return (fullName||'').split(' ')[0] || '[Name]';
   }
 
   // Build the "Hi X" greeting based on which recipients are selected.
-  // Athlete name always comes first when both are addressed.
-  // messageToParent / messageToAthlete: booleans from athlete record.
-  // Defaults: if both are false/undefined, fall back to parent only (existing behavior).
+  // Athlete always comes first when both are addressed.
+  // Defaults: messageToParent=true, messageToAthlete=false.
   function recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete) {
-    const toParent  = messageToParent !== false;   // default true
-    const toAthlete = messageToAthlete === true;    // default false
-    const athlete = preferredName(athleteName, athleteNickname);
-    const parent   = preferredName(parentName, parentNickname);
-
-    if(toAthlete && toParent) return athlete + ' and ' + parent;
-    if(toAthlete && !toParent) return athlete;
-    return parent; // parent only (default / explicit)
+    const toParent  = messageToParent !== false;
+    const toAthlete = messageToAthlete === true;
+    const goalie = preferredName(athleteName, athleteNickname);
+    const parent = preferredName(parentName, parentNickname);
+    if(toAthlete && toParent)  return goalie + ' and ' + parent;
+    if(toAthlete && !toParent) return goalie;
+    return parent;
   }
 
-  // ── Pool LOCATION notes (parking, gate codes — NEVER fee amounts) ──
-  // Fee amounts live in ONE place only: poolFeeLine(), driven by the real
-  // per-session poolFee data field. This function used to also hardcode a
-  // Jake's-Pool $20 fee line, which meant any session at Jake's Pool with
-  // poolFee set got the fee mentioned twice (once here, once via
-  // poolFeeLine()) — that's the duplication bug. Fixed by removing the
-  // fee text here entirely; Jake's Pool now only gets a fee line if/when
-  // poolFee is actually set on that session, same as every other location.
-  function poolNote(locationStr) {
-    const loc = (locationStr||'').toLowerCase();
-    if(loc.includes('mara')) {
-      return '\n\n- Park on 35th St (by citrus trees)\n- There is a gate into the pool area that may be open - if not, the code is 1972';
-    }
-    return '';
-  }
-
-  // ── Pool fee line ────────────────────────────────────────────
-  // Purely informational — states the amount only. Payment instructions
-  // live in exactly one place: closingPaymentLine() at the end of the
-  // message. See that function's comment for why.
-  function poolFeeLine(poolFee) {
-    if(!poolFee || Number(poolFee) <= 0) return '';
-    return '\n\nThere is a $' + poolFee + ' pool fee for the host family to provide the venue in good condition for our goalie session.';
-  }
-
-  // ── Fee unpaid line ──────────────────────────────────────────
-  // Purely informational — states the amount only. Payment instructions
-  // live in exactly one place: closingPaymentLine() at the end of the
-  // message. Deliberately does NOT include pool fee in its breakdown —
-  // pool fee always gets its own separate sentence via poolFeeLine().
-  // Returns { text, owes } so callers know whether to show the closing
-  // payment paragraph.
-  function unpaidLine(total, sessionFee, mileageFee, isPaid) {
-    if(isPaid || !total || total <= 0) return { owes:false, text:'' };
-    const parts = [];
-    if(Number(sessionFee||0) > 0) parts.push('$' + sessionFee + ' session fee');
-    if(Number(mileageFee||0) > 0) parts.push('$' + mileageFee + ' mileage');
-    const breakdown = parts.length > 1 ? ' (' + parts.join(' + ') + ')' : '';
-    return { owes:true, text: '\n\nThe fee is $' + total + breakdown + ' to reserve the time slot.' };
-  }
-
-  // ── Time range ───────────────────────────────────────────────
+  // ── Time helpers ─────────────────────────────────────────────────────────
   function fmtTime(t) {
     if(!t) return '';
     const m = t.match(/(\d+):(\d+)\s*(am|pm)?/i);
     if(!m) return t;
     let h = parseInt(m[1]), min = parseInt(m[2]);
-    const hasMeridiem = !!m[3];
-    if(!hasMeridiem) {
-      // 24h format
-      const suffix = h >= 12 ? 'pm' : 'am';
+    if(!m[3]) {
+      // 24-hour → 12-hour
+      const sfx = h >= 12 ? 'pm' : 'am';
       if(h > 12) h -= 12;
       if(h === 0) h = 12;
-      return h + ':' + String(min).padStart(2,'0') + suffix;
+      return h + ':' + String(min).padStart(2,'0') + sfx;
     }
     return h + ':' + String(min).padStart(2,'0') + (m[3]||'').toLowerCase();
   }
 
-  function timeRange(start, end, length) {
+  function timeRange(start, end, fallbackLength) {
     const s = fmtTime(start);
     if(!s) return '';
     if(end && fmtTime(end)) return 'from ' + s + ' to ' + fmtTime(end);
-    // Calculate end from length
-    if(length && start) {
-      const mins = parseInt((length||'').replace(/[^0-9]/g,''));
+    if(fallbackLength && start) {
+      const mins = parseInt((fallbackLength||'').replace(/[^0-9]/g,''));
       if(mins) {
         const [h, mi] = start.split(':').map(Number);
-        const total = h * 60 + mi + mins;
-        const eh = Math.floor(total/60) % 24;
-        const em = total % 60;
+        const tot = h * 60 + mi + mins;
+        const eh = Math.floor(tot/60) % 24;
+        const em = tot % 60;
         return 'from ' + s + ' to ' + fmtTime(String(eh).padStart(2,'0') + ':' + String(em).padStart(2,'0'));
       }
     }
     return 'at ' + s;
   }
 
+  // ── Date helpers ─────────────────────────────────────────────────────────
+  function parseDate(dateStr) {
+    // Always parse at noon local to avoid timezone-shift edge cases
+    return new Date((dateStr||'').slice(0,10) + 'T12:00:00');
+  }
+
   function fmtDate(dateStr) {
     if(!dateStr) return '';
-    const d = new Date(dateStr.slice(0,10) + 'T12:00:00');
-    return d.toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric'});
+    return parseDate(dateStr).toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric'});
   }
 
   function fmtShort(dateStr) {
     if(!dateStr) return '';
-    const d = new Date(dateStr.slice(0,10) + 'T12:00:00');
-    return d.toLocaleDateString('en-US', {month:'2-digit', day:'2-digit'});
+    return parseDate(dateStr).toLocaleDateString('en-US', {month:'2-digit', day:'2-digit'});
   }
 
-  function dayLabel(dateStr) {
-    if(!dateStr) return '';
-    const d = new Date(dateStr.slice(0,10) + 'T12:00:00');
-    const today = new Date(); today.setHours(0,0,0,0);
+  // Returns { dayWord, needsOn }
+  // dayWord: 'today', 'tomorrow', or 'Monday, 07/06' etc.
+  // needsOn:  true  → prepend 'on ' before dayWord
+  //           false → no 'on', use dayWord directly (today/tomorrow)
+  function dayInfo(dateStr) {
+    if(!dateStr) return { dayWord: '', needsOn: false };
+    const d = parseDate(dateStr);
+    const today    = new Date(); today.setHours(0,0,0,0);
     const tomorrow = new Date(today); tomorrow.setDate(today.getDate()+1);
     d.setHours(0,0,0,0);
-    if(d.getTime() === today.getTime()) return "today's";
-    if(d.getTime() === tomorrow.getTime()) return "tomorrow's";
-    return 'the ' + fmtShort(dateStr);
+    if(d.getTime() === today.getTime())    return { dayWord: 'today',    needsOn: false };
+    if(d.getTime() === tomorrow.getTime()) return { dayWord: 'tomorrow', needsOn: false };
+    const weekday = parseDate(dateStr).toLocaleDateString('en-US', {weekday:'long'});
+    return { dayWord: weekday + ', ' + fmtShort(dateStr), needsOn: true };
   }
 
-  // ═══════════════════════════════════════════════════════
-  // PRIVATE SESSION CONFIRMATION
-  // ═══════════════════════════════════════════════════════
-  function privateConfirm(session, athleteName, parentName, isAthlete1, parentNickname, athleteNickname, messageToParent, messageToAthlete, athleteRegion, athleteState) {
-    const goalie = preferredName(athleteName, athleteNickname);
+  // ── Timezone clarifier ───────────────────────────────────────────────────
+  const PACIFIC_REGIONS = ['Orange County','San Diego','Manhattan Beach','North Los Angeles','NorCal','Santa Barbara'];
+
+  function needsTimezoneClarifier(state, region) {
+    if(state)   return state !== 'CA';
+    if(!region) return true;
+    return !PACIFIC_REGIONS.includes(region);
+  }
+
+  // ── Program name helper ──────────────────────────────────────────────────
+  // Drops the region/level suffix after a dash: 'Goalie Group - OC' → 'Goalie Group'
+  function shortProgName(name) {
+    return (name||'').split(/\s*[–—-]\s*/)[0].replace(/\s*\d+\s*$/, '').trim();
+  }
+
+  // ── City extraction ──────────────────────────────────────────────────────
+  // Best-effort: try the second part of a "Name, City, State" address,
+  // otherwise return empty string.
+  function cityFromAddress(address) {
+    if(!address) return '';
+    const parts = address.split(',');
+    if(parts.length >= 2) return parts[1].trim();
+    return '';
+  }
+
+  // ── Pool location notes (parking, gate codes — NEVER fee amounts) ────────
+  function poolNote(locationStr) {
+    const loc = (locationStr||'').toLowerCase();
+    if(loc.includes('mara')) {
+      return '\n\n- Park on 35th St (by citrus trees)\n- There is a gate into the pool area that may be open — if not, the code is 1972';
+    }
+    return '';
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //
+  //  ATHLETE CONFIRMATION  (private sessions AND group sessions)
+  //
+  //  Element order:
+  //    1  Personal greeting
+  //    2  Event confirmation (event name, goalie, day/date, pool name + address)
+  //    3  Session fee (if unpaid) — with breakdown when multiple components
+  //    4  Package offer (only if unpaid + showPkgOffer flag)
+  //    5  Pool fee (if applicable)
+  //    6  Mileage fee (if applicable)
+  //    8  Payment line — itemized list then single combined total (if anything owed)
+  //    9  Pool-specific location notes (parking, gate codes)
+  //   10  Sign-off
+  //
+  //  Payment line appears EXACTLY ONCE, at element 8, covering every open fee
+  //  together. No individual fee paragraph ever mentions Venmo or @MIZE77.
+  //
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // Shared confirmation builder — called by both privateConfirm and groupConfirm.
+  // opts = {
+  //   greeting, goalie,
+  //   eventName,           // e.g. 'Goalie Group' or 'Private Session'
+  //   dateStr,             // YYYY-MM-DD
+  //   startTime, endTime, sessionLength,
+  //   poolName, poolAddress,
+  //   sessionFee, mileageFee, poolFee,
+  //   isPaid,
+  //   showPkgOffer,        // boolean flag from athlete record
+  //   athleteRegion, athleteState,
+  // }
+  function buildConfirmation(opts) {
+    const {
+      greeting, goalie,
+      eventName, dateStr,
+      startTime, endTime, sessionLength,
+      poolName, poolAddress,
+      sessionFee, mileageFee, poolFee,
+      isPaid,
+      showPkgOffer,
+      athleteRegion, athleteState,
+    } = opts;
+
+    // ── Element 1: Personal greeting ──────────────────────────────────────
+    const el1 = 'Hi ' + greeting + ', I hope everything is going well with you.';
+
+    // ── Element 2: Confirmation of the event ──────────────────────────────
+    const { dayWord, needsOn } = dayInfo(dateStr);
+    const dayStr = needsOn ? 'on ' + dayWord : dayWord;
+    let ts = timeRange(startTime, endTime, sessionLength);
+    if(ts && needsTimezoneClarifier(athleteState, athleteRegion)) ts += ' (Pacific Time)';
+    const tsStr  = ts ? ' ' + ts : '';
+    const locStr = poolName ? ' at ' + poolName + (poolAddress ? ' located at ' + poolAddress : '') : '';
+    const el2 = 'I am confirming the ' + eventName + ' for ' + goalie + ' ' + dayStr + tsStr + locStr + '.';
+
+    // ── Elements 3–6 & 8: Fees ────────────────────────────────────────────
+    // We collect each open fee as { label, amount } so element 8 can list
+    // them individually and then add the combined total.
+    const sf = Number(sessionFee||0);
+    const mf = Number(mileageFee||0);
+    const pf = Number(poolFee||0);
+
+    let el3 = '';   // session fee line
+    let el4 = '';   // package offer line
+    let el5 = '';   // pool fee line
+    let el6 = '';   // mileage fee line
+    let el8 = '';   // payment line
+
+    const openFees = []; // { label, amount } for payment itemization
+
+    if(!isPaid && sf > 0) {
+      // Element 3 — session fee with breakdown when mileage is also present
+      if(mf > 0) {
+        el3 = 'The fee for this session is $' + (sf + mf) + ' ($' + sf + ' session fee + $' + mf + ' mileage fee).';
+        // Payment line itemizes session and mileage separately so the total is clear
+        openFees.push({ label: 'session fee', amount: sf });
+        openFees.push({ label: 'mileage fee', amount: mf });
+      } else {
+        el3 = 'The fee for this session is $' + sf + '.';
+        openFees.push({ label: 'session fee', amount: sf });
+      }
+    } else if(!isPaid && mf > 0) {
+      // No session fee but there is a mileage fee (edge case)
+      openFees.push({ label: 'mileage fee', amount: mf });
+    }
+
+    // Element 4 — package offer (only if unpaid AND flag checked)
+    if(!isPaid && showPkgOffer) {
+      el4 = 'If ' + goalie + ' is planning to join consistently in my goalie sessions I would like to offer you the Goalie Performance Package with 6 group sessions for $750 which brings down the fee per session to just $125.';
+    }
+
+    // Element 5 — pool fee (independent of session payment)
+    if(pf > 0) {
+      el5 = 'There is an additional pool fee of $' + pf + ' that goes to the host family for providing their pool for this session.';
+      openFees.push({ label: 'pool fee', amount: pf });
+    }
+
+    // Element 6 — mileage fee informational paragraph
+    if(!isPaid && mf > 0) {
+      const city = cityFromAddress(poolAddress);
+      el6 = 'The mileage fee for my drive out' + (city ? ' to ' + city : '') + ' is $' + mf + '.';
+    }
+
+    // Element 8 — single payment paragraph covering all open fees
+    if(openFees.length > 0) {
+      const total = openFees.reduce((s, f) => s + f.amount, 0);
+      let itemized;
+      if(openFees.length === 1) {
+        itemized = '$' + total;
+      } else {
+        itemized = openFees.map(f => '$' + f.amount + ' ' + f.label).join(' + ') + ' = $' + total;
+      }
+      el8 = 'Please send the open fee of ' + itemized + ' by venmo to my account @MIZE77 or let me know if you prefer a different method of payment.';
+    }
+
+    // ── Element 9: Pool location notes ────────────────────────────────────
+    const el9 = poolNote(poolName || poolAddress || '');
+
+    // ── Element 10: Sign-off ──────────────────────────────────────────────
+    const el10 = 'I look forward seeing you there. Best greetings, MIZE';
+
+    // ── Assemble — blank lines between non-empty elements ─────────────────
+    const elements = [el1, el2, el3, el4, el5, el6, el8].filter(Boolean);
+    let body = elements.join('\n\n');
+    if(el9) body += el9;           // pool note already starts with \n\n
+    body += '\n\n' + el10;
+
+    return body;
+  }
+
+  // ── Private session confirmation ──────────────────────────────────────────
+  function privateConfirm(session, athleteName, parentName, isAthlete1, parentNickname, athleteNickname, messageToParent, messageToAthlete, athleteRegion, athleteState, showPkgOffer) {
+    const goalie   = preferredName(athleteName, athleteNickname);
     const greeting = recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete);
-    const loc = [session.poolName, session.poolAddress].filter(Boolean).join(', ');
-    const locStr = loc ? ' at ' + loc : '';
-    let ts = timeRange(session.time, session.endTime, session.length);
-    if(ts && needsTimezoneClarifier(athleteState, athleteRegion)) ts = ts + ' (Pacific Time)';
-    const tsStr = ts ? ' ' + ts : '';
-    const day = dayLabel(session.date);
-
-    const sessionFee = Number(session.fee||0);
-    const mileageFee = Number(session.mileageFee||0);
-    const poolFeeAmt = Number(session.poolFee||0);
-    // Main fee total intentionally EXCLUDES the pool fee — pool fee always
-    // gets its own separate explanatory sentence via poolFeeLine(), never
-    // folded into the combined-total breakdown. This matches groupConfirm
-    // and groupInvite, so pool fee phrasing/payment instructions are
-    // consistent everywhere, and a fee is never possible to mention twice.
-    const fullTotal  = sessionFee + mileageFee;
-
-    const isSemi = (session.format||'').startsWith('Semi');
-    const isPaid = isSemi
-      ? (isAthlete1 !== false ? !!session.paid : !!session.paid2)
-      : !!session.paid;
-
-    const feeResult = unpaidLine(fullTotal, sessionFee, mileageFee, isPaid);
-    // Pool fee is tracked independently of session-fee payment status
-    // (see poolFeePaid in goalie_sessions.html) — always mention it here
-    // if poolFee>0, regardless of isPaid, matching groupConfirm/groupInvite.
-    const poolLine = poolFeeLine(poolFeeAmt) + poolNote(session.poolName);
-
-    return 'Hi ' + greeting + ', this is to confirm the participation of ' + goalie
-      + ' in ' + day + ' ' + (session.type||'Private Session') + tsStr + locStr + '.'
-      + poolLine + feeResult.text + closingPaymentLine(feeResult.owes, poolFeeAmt)
-      + '\n\nSee you there, MIZE';
+    const isSemi   = (session.format||'').startsWith('Semi');
+    const isPaid   = isSemi ? (isAthlete1 !== false ? !!session.paid : !!session.paid2) : !!session.paid;
+    return buildConfirmation({
+      greeting, goalie,
+      eventName:     session.type || 'Private Session',
+      dateStr:       session.date,
+      startTime:     session.time,
+      endTime:       session.endTime,
+      sessionLength: session.length,
+      poolName:      session.poolName,
+      poolAddress:   session.poolAddress,
+      sessionFee:    Number(session.fee||0),
+      mileageFee:    Number(session.mileageFee||0),
+      poolFee:       Number(session.poolFee||0),
+      isPaid,
+      showPkgOffer:  !!showPkgOffer,
+      athleteRegion, athleteState,
+    });
   }
 
-  // ═══════════════════════════════════════════════════════
-  // GROUP SESSION CONFIRMATION
-  // ═══════════════════════════════════════════════════════
-  function groupConfirm(prog, occ, athleteName, parentName, isPaid, parentNickname, athleteNickname, messageToParent, messageToAthlete, athleteRegion, athleteState) {
-    const goalie = preferredName(athleteName, athleteNickname);
+  // ── Group session confirmation ────────────────────────────────────────────
+  function groupConfirm(prog, occ, athleteName, parentName, isPaid, parentNickname, athleteNickname, messageToParent, messageToAthlete, athleteRegion, athleteState, showPkgOffer) {
+    const goalie   = preferredName(athleteName, athleteNickname);
     const greeting = recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete);
-    const loc = [occ.location||prog.location, occ.address||prog.address].filter(Boolean).join(', ');
-    const locStr = loc ? ' at ' + loc : '';
-    let ts = timeRange(occ.startTime||prog.startTime, occ.endTime||prog.endTime, '90 min');
-    if(ts && needsTimezoneClarifier(athleteState, athleteRegion)) ts = ts + ' (Pacific Time)';
-    const tsStr = ts ? ' ' + ts : '';
-    const day = dayLabel(occ.date);
-    const sessionFee = Number(prog.sessionFee||175);
-    const feeResult = unpaidLine(sessionFee, sessionFee, 0, isPaid);
-    const pFee = Number(occ.poolFee||prog.poolFee||0);
-    const pLine = poolFeeLine(pFee) + poolNote(occ.location||prog.location);
-
-    return 'Hi ' + greeting + ', this is to confirm the participation of ' + goalie
-      + ' in ' + day + ' goalie session' + tsStr + locStr + '.'
-      + pLine + feeResult.text + closingPaymentLine(feeResult.owes, pFee)
-      + '\n\nSee you there, MIZE';
+    return buildConfirmation({
+      greeting, goalie,
+      eventName:   shortProgName(prog.name),
+      dateStr:     occ.date,
+      startTime:   occ.startTime || prog.startTime,
+      endTime:     occ.endTime   || prog.endTime,
+      sessionLength: '90 min',
+      poolName:    occ.location  || prog.location,
+      poolAddress: occ.address   || prog.address,
+      sessionFee:  Number(prog.sessionFee||175),
+      mileageFee:  0,
+      poolFee:     Number(occ.poolFee||prog.poolFee||0),
+      isPaid:      !!isPaid,
+      showPkgOffer: !!showPkgOffer,
+      athleteRegion, athleteState,
+    });
   }
 
-  // ═══════════════════════════════════════════════════════
-  // Shared package/fee phrasing — used by BOTH groupInvite() and
-  // groupSpotOpen(). This is the ONE place "package used up", the $750
-  // re-up price, and the free-package wording are defined. Previously
-  // goalie_sessions.html had its own separate copy of this exact logic
-  // for the "last spot open" message, which is how the two message types
-  // drifted into slightly different wording over time. Don't duplicate
-  // this logic anywhere else — add new fee/package scenarios here only.
+  // ══════════════════════════════════════════════════════════════════════════
   //
-  // IMPORTANT: this function is purely INFORMATIONAL — it states what
-  // things cost, never how to pay. Payment instructions (Venmo, etc.)
-  // live in exactly one place: the closingPaymentLine() at the very end
-  // of the message. That's what stops "send by venmo to @MIZE77" from
-  // appearing multiple times across different fee paragraphs.
+  //  ATHLETE INVITATION  (group sessions)
   //
-  // Returns { text, owesSessionFee } — owesSessionFee tells the caller
-  // whether THIS session's base fee is actually owed (false when fully
-  // covered by a free package or a same-session coupon). The optional
-  // $750 re-up offer never counts as "owed" — it's a future upsell, not
-  // a charge for this session.
+  //  packageFeeSection() handles every package/free-package/no-package branch
+  //  and is shared by groupInvite and groupSpotOpen.  All fee paragraphs are
+  //  purely informational; payment instructions live only in closingPaymentLine().
   //
-  // `signupVerb` lets the two callers ask for different non-package signup
-  // phrasing ("please sign up online..." for groupInvite vs "please let
-  // me know if X would like to join... first come first serve" for
-  // groupSpotOpen) while sharing every package-related branch untouched.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // Returns { text, owesSessionFee }.
+  // owesSessionFee = false means the session itself is covered (package,
+  // free package, coupon) so the closing payment line can be skipped IF
+  // there's also no pool fee.
   function packageFeeSection(opts) {
     const { goalie, fee, isHP, hasFreePackage, freePackageCouponCode,
             hasPackage, packageRemaining, couponCode, newPackageCoupon,
             discountCoupon, signupVerb, usedUpSignupVerb } = opts;
     const discountedFee = Math.max(0, fee - 50);
 
+    // Priority 1: free participation package
     if(hasFreePackage) {
       return { owesSessionFee: false, text: goalie + ' has a Goalie Free Participation Package, so '
         + (isHP
           ? 'if ' + goalie + ' would like to join this session please text me to reserve the spot and I will confirm by text if it is still available.'
           : ('this session is free. Please sign up at www.theperfectgoalie.com'
-              + (freePackageCouponCode ? ' and use your coupon code ' + freePackageCouponCode + ' at checkout so that the fee gets waived.' : ' and let me know so I can reserve the spot.'))) };
+              + (freePackageCouponCode
+                  ? ' and use your coupon code ' + freePackageCouponCode + ' at checkout so that the fee gets waived.'
+                  : ' and let me know so I can reserve the spot.'))) };
     }
+
+    // Priority 2: active package + coupon (session covered by the coupon)
     if(hasPackage && packageRemaining > 0 && couponCode) {
-      return { owesSessionFee: false, text: 'You still have ' + packageRemaining + ' session' + (packageRemaining !== 1 ? 's' : '')
-        + ' left with your Goalie Performance Package. If ' + goalie + ' would like to join this session please '
+      return { owesSessionFee: false, text: 'You still have ' + packageRemaining
+        + ' session' + (packageRemaining !== 1 ? 's' : '') + ' left with your Goalie Performance Package. If ' + goalie + ' would like to join this session please '
         + (isHP
           ? 'text me to reserve the spot and I will confirm by text if it is still available.'
           : 'sign up at www.theperfectgoalie.com and use your coupon code ' + couponCode + ' at the checkout so that the fee gets waived.') };
     }
+
+    // Priority 3: active package, sessions remaining, no coupon needed
     if(hasPackage && packageRemaining > 0) {
-      return { owesSessionFee: false, text: 'You still have ' + packageRemaining + ' session' + (packageRemaining !== 1 ? 's' : '')
-        + ' left with your Goalie Performance Package. If ' + goalie
+      return { owesSessionFee: false, text: 'You still have ' + packageRemaining
+        + ' session' + (packageRemaining !== 1 ? 's' : '') + ' left with your Goalie Performance Package. If ' + goalie
         + ' would like to join this session please text me to reserve the spot and I will confirm by text if it is still available.' };
     }
+
+    // Priority 4: package fully used up — session fee is now owed
     if(hasPackage && packageRemaining === 0) {
-      // Package is used up — THIS session is no longer free, the normal
-      // per-session fee applies. The $750 re-up is a separate, optional
-      // offer for FUTURE sessions, so it never counts toward owesSessionFee.
       const signupLine = isHP
         ? 'If ' + goalie + ' would like to join this session please text me to reserve the spot and I will confirm by text if it is still available.'
         : usedUpSignupVerb;
-      const newPkgCouponLine = newPackageCoupon
+      const newPkgLine = newPackageCoupon
         ? ' Use coupon code ' + newPackageCoupon + ' at checkout to get your new package for free and use your package sessions immediately.'
         : '';
-      // The $750 re-up offer appears EXACTLY ONCE here. No caller should
-      // ever append a second "$750 / 6 sessions" line on top of this branch.
-      return { owesSessionFee: true, text: signupLine + '\n\nYour Goalie Performance Package is now used up. You could purchase a new package for $750 for 6 group sessions directly with me to bring the fee down to $125 per session.' + newPkgCouponLine };
+      // $750 re-up mentioned EXACTLY ONCE here — never add a second mention elsewhere.
+      return { owesSessionFee: true, text: signupLine
+        + '\n\nYour Goalie Performance Package is now used up. You could purchase a new package for $750 for 6 group sessions directly with me to bring the fee down to $125 per session.' + newPkgLine };
     }
-    // No package at all — the per-session fee is owed.
+
+    // Priority 5: no package at all
     const discountLine = discountCoupon
       ? '\n\nUse coupon code ' + discountCoupon + ' at checkout to save $50 ($' + discountedFee + ' total).'
       : '\n\nOr $125 when using a voucher from the Goalie Performance Package ($750 for 6 sessions).';
     return { owesSessionFee: true, text: signupVerb + discountLine };
   }
 
-  // ── Closing payment line ────────────────────────────────────
-  // The ONE place payment instructions (Venmo handle, "or your preferred
-  // method") ever appear in a message. Called once at the very end, after
-  // all fee paragraphs have stated their amounts purely informationally.
-  // Skipped entirely if nothing is actually owed this time (per product
-  // decision: a fully-covered/free session with no pool fee gets no
-  // payment paragraph at all).
+  // Single payment instruction — called once at the very end of every invitation.
+  // Omitted entirely when nothing is owed (free session + no pool fee).
   function closingPaymentLine(owesSessionFee, poolFee) {
     if(!owesSessionFee && !(Number(poolFee||0) > 0)) return '';
     return '\n\nPlease send your payment by venmo to my account @MIZE77 or by your preferred method of payment.';
   }
 
-  // ═══════════════════════════════════════════════════════
-  // GROUP SESSION INVITATION
-  // ═══════════════════════════════════════════════════════
+  // ── Group session invitation ──────────────────────────────────────────────
   function groupInvite(prog, occ, athleteName, parentName, hasPackage, packageRemaining, couponCode, showPkgOffer, parentNickname, athleteNickname, newPackageCoupon, hasFreePackage, freePackageCouponCode, messageToParent, messageToAthlete, athleteRegion, athleteState) {
-    const parent = preferredName(parentName, parentNickname);
-    const goalie = preferredName(athleteName, athleteNickname);
+    const goalie   = preferredName(athleteName, athleteNickname);
     const greeting = recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete);
     const location = occ.location || prog.location || '[Pool Location]';
     let ts = timeRange(occ.startTime||prog.startTime, occ.endTime||prog.endTime, '90 min');
-    if(ts && needsTimezoneClarifier(athleteState, athleteRegion)) ts = ts + ' (Pacific Time)';
-    const tsStr = ts ? ' ' + ts : '';
-    const sessionDate = new Date((occ.date||'').slice(0,10) + 'T12:00:00');
-    const weekday = sessionDate.toLocaleDateString('en-US', {weekday:'long'});
-    const dateMMDD = sessionDate.toLocaleDateString('en-US', {month:'2-digit', day:'2-digit'});
-    const shortName = prog.name.split(/\s*[–—-]\s*/)[0].replace(/\s*\d+\s*$/, '').trim();
-    const fee = prog.sessionFee || 175;
+    if(ts && needsTimezoneClarifier(athleteState, athleteRegion)) ts += ' (Pacific Time)';
+    const tsStr    = ts ? ' ' + ts : '';
+    const { dayWord, needsOn } = dayInfo(occ.date);
+    const dayStr   = needsOn ? 'on ' + dayWord : dayWord;
+    const sName    = shortProgName(prog.name);
+    const fee      = prog.sessionFee || 175;
+    const pFee     = Number(occ.poolFee||prog.poolFee||0);
     const discountCoupon = couponCode || prog.discountCoupon || '';
-    const isHP = prog.level === 'High Performance';
-    const pFee = Number(occ.poolFee||prog.poolFee||0);
-    const pLine = poolFeeLine(pFee);
-    const jakeLine = poolNote(location);
+    const isHP     = prog.level === 'High Performance';
 
-    let feeResult = packageFeeSection({
+    const feeResult = packageFeeSection({
       goalie, fee, isHP, hasFreePackage, freePackageCouponCode,
       hasPackage, packageRemaining, couponCode, newPackageCoupon, discountCoupon,
-      signupVerb: 'If ' + goalie + ' would like to participate please sign up online at www.theperfectgoalie.com. The fee is $' + fee + ' per session.',
+      signupVerb:     'If ' + goalie + ' would like to participate please sign up online at www.theperfectgoalie.com. The fee is $' + fee + ' per session.',
       usedUpSignupVerb: 'If ' + goalie + ' would like to participate please sign up online at www.theperfectgoalie.com. The fee is $' + fee + ' per session.',
     });
 
@@ -307,74 +404,58 @@ const MIZE_MESSAGES = (function() {
       ? '\n\nYou can also buy a Goalie Performance Package for six goalie sessions within 15 weeks for a total of $750 which brings down the fee per session to $125.'
       : '';
 
-    return 'Hi ' + greeting + ', I hope you are doing well. My next ' + shortName
-      + ' will be on ' + weekday + ', ' + dateMMDD + tsStr + ' at ' + location + '. '
-      + feeResult.text + pLine + jakeLine + pkgOfferLine + closingPaymentLine(feeResult.owesSessionFee, pFee)
+    const pLine  = pFee > 0 ? '\n\nThere is an additional pool fee of $' + pFee + ' that goes to the host family for providing their pool for this session.' : '';
+    const note   = poolNote(location);
+    const pay    = closingPaymentLine(feeResult.owesSessionFee, pFee);
+
+    return 'Hi ' + greeting + ', I hope you are doing well. My next ' + sName
+      + ' will be ' + dayStr + tsStr + ' at ' + location + '. '
+      + feeResult.text + pkgOfferLine + pLine + note + pay
       + '\n\nBest greetings, MIZE';
   }
 
-  // ═══════════════════════════════════════════════════════
-  // GROUP SESSION — LAST SPOT OPEN
-  // ═══════════════════════════════════════════════════════
-  // Same package/fee wording as groupInvite (via the shared
-  // packageFeeSection() helper above) — only the opening framing differs:
-  // "there is still 1 spot open... first come first serve" instead of
-  // a plain invitation. This used to be a separate, hand-copied
-  // implementation living in goalie_sessions.html; consolidated here so
-  // there's exactly one definition of every fee/package sentence.
+  // ── Group session — last spot open ────────────────────────────────────────
   function groupSpotOpen(prog, occ, athleteName, parentName, hasPackage, packageRemaining, couponCode, parentNickname, athleteNickname, newPackageCoupon, hasFreePackage, freePackageCouponCode, messageToParent, messageToAthlete, athleteRegion, athleteState) {
-    const goalie = preferredName(athleteName, athleteNickname);
+    const goalie   = preferredName(athleteName, athleteNickname);
     const greeting = recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete);
     const location = occ.location || prog.location || '[Pool Location]';
     let ts = timeRange(occ.startTime||prog.startTime, occ.endTime||prog.endTime, '90 min');
-    if(ts && needsTimezoneClarifier(athleteState, athleteRegion)) ts = ts + ' (Pacific Time)';
-    const tsStr = ts ? ' ' + ts : '';
-    const sessionDate = new Date((occ.date||'').slice(0,10) + 'T12:00:00');
-    const weekday = sessionDate.toLocaleDateString('en-US', {weekday:'long'});
-    const shortName = prog.name.split(/\s*[–—-]\s*/)[0].replace(/\s*\d+\s*$/, '').trim();
-    const fee = prog.sessionFee || 175;
+    if(ts && needsTimezoneClarifier(athleteState, athleteRegion)) ts += ' (Pacific Time)';
+    const tsStr    = ts ? ' ' + ts : '';
+    const sessionDate = parseDate(occ.date);
+    const weekday  = sessionDate.toLocaleDateString('en-US', {weekday:'long'});
+    const sName    = shortProgName(prog.name);
+    const fee      = prog.sessionFee || 175;
+    const pFee     = Number(occ.poolFee||prog.poolFee||0);
     const discountCoupon = couponCode || prog.discountCoupon || '';
-    const isHP = prog.level === 'High Performance';
-    const pFee = Number(occ.poolFee||prog.poolFee||0);
-    const pLine = poolFeeLine(pFee);
-    const jakeLine = poolNote(location);
+    const isHP     = prog.level === 'High Performance';
 
     const feeResult = packageFeeSection({
       goalie, fee, isHP, hasFreePackage, freePackageCouponCode,
       hasPackage, packageRemaining, couponCode, newPackageCoupon, discountCoupon,
-      signupVerb: 'The fee is $' + fee + ' for a single sign up. I am granting the final spot on a first come first serve basis.',
+      signupVerb:       'The fee is $' + fee + ' for a single sign up. I am granting the final spot on a first come first serve basis.',
       usedUpSignupVerb: 'The fee is $' + fee + ' for a single sign up. I am granting the final spot on a first come first serve basis.',
     });
 
-    return 'Hi ' + greeting + ', I hope you are doing well. For my ' + shortName + ' this ' + weekday
+    const pLine = pFee > 0 ? '\n\nThere is an additional pool fee of $' + pFee + ' that goes to the host family for providing their pool for this session.' : '';
+    const note  = poolNote(location);
+    const pay   = closingPaymentLine(feeResult.owesSessionFee, pFee);
+
+    return 'Hi ' + greeting + ', I hope you are doing well. For my ' + sName + ' this ' + weekday
       + ' at ' + location + tsStr + ' there is still 1 spot open. Please let me know if ' + goalie + ' would like to join. '
-      + feeResult.text + pLine + jakeLine + closingPaymentLine(feeResult.owesSessionFee, pFee)
+      + feeResult.text + pLine + note + pay
       + '\n\nHave a great day, MIZE';
   }
 
-  // ═══════════════════════════════════════════════════════
-  // MEETING CONFIRMATION
-  // ═══════════════════════════════════════════════════════
-  // Regions known to already be in Pacific Time — used only as a fallback
-  // when an athlete's state isn't filled out yet.
-  const PACIFIC_REGIONS = ['Orange County','San Diego','Manhattan Beach','North Los Angeles','NorCal','Santa Barbara'];
-
-  // Decide whether a "(Pacific Time)" clarifier is needed for session/meeting
-  // times. State is the precise signal (CA = no clarifier, any other state
-  // or "International" = clarifier). Falls back to region only when state
-  // hasn't been set for that athlete yet.
-  function needsTimezoneClarifier(state, region) {
-    if(state) return state !== 'CA';
-    if(!region) return true; // no state and no region — be safe, clarify
-    return !PACIFIC_REGIONS.includes(region);
-  }
-
+  // ══════════════════════════════════════════════════════════════════════════
+  //  MEETING CONFIRMATION
+  // ══════════════════════════════════════════════════════════════════════════
   function meetingConfirm(meeting, athleteName, parentName, parentNickname, athleteRegion, athleteState) {
     const parent = preferredName(parentName, parentNickname);
-    const tl = meeting.meetingType === 'Other' ? meeting.otherType : meeting.meetingType;
+    const tl     = meeting.meetingType === 'Other' ? meeting.otherType : meeting.meetingType;
     let ts = timeRange(meeting.time, '', meeting.length);
-    if(ts && needsTimezoneClarifier(athleteState, athleteRegion)) ts = ts + ' (Pacific Time)';
-    const tsStr = ts ? ' ' + ts : '';
+    if(ts && needsTimezoneClarifier(athleteState, athleteRegion)) ts += ' (Pacific Time)';
+    const tsStr  = ts ? ' ' + ts : '';
     const locStr = meeting.location ? ' at ' + meeting.location : '';
     const feeLine = !meeting.isFree && meeting.fee
       ? '\n\nPlease venmo the fee of $' + meeting.fee + ' to my account @MIZE77 to reserve the time slot.'
@@ -388,9 +469,9 @@ const MIZE_MESSAGES = (function() {
       + '\n\nPlease let me know if this works for you or if you need to reschedule.\n\nBest greetings, MIZE';
   }
 
-  // ═══════════════════════════════════════════════════════
-  // COACH CONFIRMATION
-  // ═══════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════════════════
+  //  COACH CONFIRMATION
+  // ══════════════════════════════════════════════════════════════════════════
   function coachConfirm(coachName, eventName, date, startTime, endTime, location, address, isRemote, coachNickname) {
     const locFull = [location, address].filter(Boolean).join(', ');
     const ts = timeRange(startTime, endTime, '90 min');
@@ -403,7 +484,9 @@ const MIZE_MESSAGES = (function() {
       + '\n\nThank you!\nMIZE';
   }
 
-  // Public API
+  // ══════════════════════════════════════════════════════════════════════════
+  //  Public API
+  // ══════════════════════════════════════════════════════════════════════════
   return {
     privateConfirm,
     groupConfirm,
@@ -415,15 +498,13 @@ const MIZE_MESSAGES = (function() {
     recipientGreeting,
     needsTimezoneClarifier,
     PACIFIC_REGIONS,
-    // Utilities (exported for reuse)
+    // Utilities (exported for GSM / phone-app callers that use them directly)
     poolNote,
-    poolFeeLine,
-    unpaidLine,
     fmtTime,
     timeRange,
     fmtDate,
     fmtShort,
-    dayLabel,
+    dayInfo,
   };
 
 })();
