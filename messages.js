@@ -167,6 +167,8 @@ const MIZE_MESSAGES = (function() {
       sessionFee, mileageFee, poolFee,
       isPaid,
       showPkgOffer,
+      isPoolOwner,      // true when the confirmed athlete owns this pool
+      poolAccessNotes,  // from pool.accessNotes in GSM pools data
       athleteRegion, athleteState,
     } = opts;
 
@@ -242,8 +244,17 @@ const MIZE_MESSAGES = (function() {
       el8 = 'Please send the open fee of ' + itemized + ' by venmo to my account @MIZE77 or let me know if you prefer a different method of payment.';
     }
 
-    // ── Element 9: Pool location notes ────────────────────────────────────
-    const el9 = poolNote(poolName || poolAddress || '');
+    // ── Element 9: Pool access notes ──────────────────────────────────────
+    // Uses the pool's accessNotes field (set in GSM Pools tab).
+    // Skipped entirely if the athlete is the owner of this pool —
+    // they already know how to get in.
+    // Falls back to the legacy hardcoded poolNote() for pools that
+    // haven't been migrated to the new accessNotes field yet.
+    const el9 = (() => {
+      if(isPoolOwner) return '';
+      if(poolAccessNotes) return '\n\n' + poolAccessNotes.trim();
+      return poolNote(poolName || '');  // legacy fallback
+    })();
 
     // ── Element 10: Sign-off ──────────────────────────────────────────────
     const el10 = 'I look forward seeing you there. Best greetings, MIZE';
@@ -258,47 +269,57 @@ const MIZE_MESSAGES = (function() {
   }
 
   // ── Private session confirmation ──────────────────────────────────────────
-  function privateConfirm(session, athleteName, parentName, isAthlete1, parentNickname, athleteNickname, messageToParent, messageToAthlete, athleteRegion, athleteState, showPkgOffer) {
+  function privateConfirm(session, athleteName, parentName, isAthlete1, parentNickname, athleteNickname, messageToParent, messageToAthlete, athleteRegion, athleteState, showPkgOffer, pools, athletePoolId) {
     const goalie   = preferredName(athleteName, athleteNickname);
     const greeting = recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete);
     const isSemi   = (session.format||'').startsWith('Semi');
     const isPaid   = isSemi ? (isAthlete1 !== false ? !!session.paid : !!session.paid2) : !!session.paid;
+    // Resolve pool record from pools list using pool name match
+    const poolRec  = (pools||[]).find(p => p.name && session.poolName && p.name.toLowerCase() === session.poolName.toLowerCase());
+    const isPoolOwner = !!(poolRec && athletePoolId && poolRec.id === athletePoolId);
     return buildConfirmation({
       greeting, goalie,
-      eventName:     session.type || 'Private Session',
-      dateStr:       session.date,
-      startTime:     session.time,
-      endTime:       session.endTime,
-      sessionLength: session.length,
-      poolName:      session.poolName,
-      poolAddress:   session.poolAddress,
-      sessionFee:    Number(session.fee||0),
-      mileageFee:    Number(session.mileageFee||0),
-      poolFee:       Number(session.poolFee||0),
+      eventName:      session.type || 'Private Session',
+      dateStr:        session.date,
+      startTime:      session.time,
+      endTime:        session.endTime,
+      sessionLength:  session.length,
+      poolName:       session.poolName,
+      poolAddress:    session.poolAddress,
+      sessionFee:     Number(session.fee||0),
+      mileageFee:     Number(session.mileageFee||0),
+      poolFee:        Number(session.poolFee||0),
       isPaid,
-      showPkgOffer:  !!showPkgOffer,
+      showPkgOffer:   !!showPkgOffer,
+      isPoolOwner,
+      poolAccessNotes: poolRec?.accessNotes || '',
       athleteRegion, athleteState,
     });
   }
 
   // ── Group session confirmation ────────────────────────────────────────────
-  function groupConfirm(prog, occ, athleteName, parentName, isPaid, parentNickname, athleteNickname, messageToParent, messageToAthlete, athleteRegion, athleteState, showPkgOffer) {
-    const goalie   = preferredName(athleteName, athleteNickname);
-    const greeting = recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete);
+  function groupConfirm(prog, occ, athleteName, parentName, isPaid, parentNickname, athleteNickname, messageToParent, messageToAthlete, athleteRegion, athleteState, showPkgOffer, pools, athletePoolId) {
+    const goalie    = preferredName(athleteName, athleteNickname);
+    const greeting  = recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete);
+    const poolName  = occ.location || prog.location;
+    const poolRec   = (pools||[]).find(p => p.name && poolName && p.name.toLowerCase() === poolName.toLowerCase());
+    const isPoolOwner = !!(poolRec && athletePoolId && poolRec.id === athletePoolId);
     return buildConfirmation({
       greeting, goalie,
-      eventName:   shortProgName(prog.name),
-      dateStr:     occ.date,
-      startTime:   occ.startTime || prog.startTime,
-      endTime:     occ.endTime   || prog.endTime,
+      eventName:    shortProgName(prog.name),
+      dateStr:      occ.date,
+      startTime:    occ.startTime || prog.startTime,
+      endTime:      occ.endTime   || prog.endTime,
       sessionLength: '90 min',
-      poolName:    occ.location  || prog.location,
-      poolAddress: occ.address   || prog.address,
-      sessionFee:  Number(prog.sessionFee||175),
-      mileageFee:  0,
-      poolFee:     Number(occ.poolFee||prog.poolFee||0),
-      isPaid:      !!isPaid,
+      poolName,
+      poolAddress:  occ.address   || prog.address,
+      sessionFee:   Number(prog.sessionFee||175),
+      mileageFee:   0,
+      poolFee:      Number(occ.poolFee||prog.poolFee||0),
+      isPaid:       !!isPaid,
       showPkgOffer: !!showPkgOffer,
+      isPoolOwner,
+      poolAccessNotes: poolRec?.accessNotes || '',
       athleteRegion, athleteState,
     });
   }
