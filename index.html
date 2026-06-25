@@ -78,6 +78,21 @@ body{background:#0b0f14;color:#e8edf2;font-family:-apple-system,BlinkMacSystemFo
 .m-ev-time{font-size:8px;opacity:0.75}
 .now-line{position:absolute;left:0;right:0;height:2px;background:#f06060;z-index:5;border-radius:1px}
 .cbadge{display:inline-block;background:rgba(0,212,170,0.12);color:#00d4aa;font-size:10px;font-weight:600;padding:1px 6px;border-radius:7px;margin-left:5px}
+.note-card{background:#1a1f27;border:1px solid #2a2f3a;border-radius:10px;padding:11px 13px;margin-bottom:8px}
+.note-card.done{opacity:0.45}
+.note-text{font-size:13px;color:#c8d0dc;line-height:1.5;margin-bottom:7px;white-space:pre-wrap;word-break:break-word}
+.note-meta{font-size:10px;color:#555;margin-bottom:7px}
+.note-btns{display:flex;gap:6px}
+.nbtn{padding:5px 10px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid}
+.nbtn.done-btn{background:rgba(0,212,170,0.1);border-color:rgba(0,212,170,0.3);color:#00d4aa}
+.nbtn.del-btn{background:rgba(239,68,68,0.1);border-color:rgba(239,68,68,0.3);color:#ef4444}
+.note-input-row{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.note-textarea{background:#1a1f27;border:1px solid #2a2f3a;border-radius:10px;color:#e8edf2;font-size:13px;padding:11px 13px;resize:none;min-height:80px;font-family:inherit;width:100%;box-sizing:border-box}
+.note-textarea:focus{outline:none;border-color:#00d4aa44}
+.note-add-btn{background:rgba(0,212,170,0.1);border:1px solid rgba(0,212,170,0.3);color:#00d4aa;padding:10px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;text-align:center}
+.notes-sync-row{display:flex;gap:8px;margin-bottom:10px;align-items:center}
+.sync-btn{background:rgba(91,141,238,0.1);border:1px solid rgba(91,141,238,0.3);color:#5b8dee;padding:7px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer}
+.sync-msg{font-size:11px;color:#555;flex:1}
 .briefing-box{background:#1a1f27;border:1px solid #2a2f3a;border-radius:12px;padding:14px;margin-bottom:14px}
 .briefing-title{font-size:14px;font-weight:700;margin-bottom:10px;color:#e8edf2}
 .briefing-pre{font-family:-apple-system,sans-serif;font-size:12px;line-height:1.7;color:#c8d0dc;white-space:pre-wrap;word-break:break-word;margin-bottom:12px}
@@ -109,6 +124,7 @@ body{background:#0b0f14;color:#e8edf2;font-family:-apple-system,BlinkMacSystemFo
   <div class="tabs">
     <div class="tab active" onclick="switchTab('list',this)">List</div>
     <div class="tab" onclick="switchTab('matrix',this)">Schedule</div>
+    <div class="tab" onclick="switchTab('notes',this)">Notes</div>
   </div>
 </div>
 <div id="last-upd" class="last-upd"></div>
@@ -130,8 +146,104 @@ body{background:#0b0f14;color:#e8edf2;font-family:-apple-system,BlinkMacSystemFo
 
 <script>
 const GIST_URL='https://gist.githubusercontent.com/mize77/57fe1173e91ff569c66fb4af80287def/raw/mize_schedule.json';
+const NOTES_GIST_ID='57fe1173e91ff569c66fb4af80287def';
+const NOTES_GIST_TOKEN=['ghp_lHBnBSR','NgfCj7zFXQ','TGumkblfI1','BsN4WOfBW'].join('');
 const HS=8,HE=22,SH=28,SLOTS=(HE-HS)*2;
 let data=null,tab='list',curMsg='';
+let phoneNotes=[];  // notes array synced with Gist
+
+async function fetchNotesFromGist(){
+  try{
+    const res=await fetch(`https://api.github.com/gists/${NOTES_GIST_ID}`,{
+      headers:{'Authorization':`token ${NOTES_GIST_TOKEN}`,'Accept':'application/vnd.github+json'}
+    });
+    const g=await res.json();
+    const f=g.files&&g.files['mize_notes.json'];
+    if(!f)return[];
+    return JSON.parse(f.content||'[]');
+  }catch(e){return null;}
+}
+
+async function pushNotesToGist(notesList){
+  try{
+    await fetch(`https://api.github.com/gists/${NOTES_GIST_ID}`,{
+      method:'PATCH',
+      headers:{'Authorization':`token ${NOTES_GIST_TOKEN}`,'Content-Type':'application/json'},
+      body:JSON.stringify({files:{'mize_notes.json':{content:JSON.stringify(notesList)}}})
+    });
+  }catch(e){console.warn('notes push failed',e);}
+}
+
+function noteTs(ts){
+  const d=new Date(ts);
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+}
+
+async function loadNotesTab(){
+  document.getElementById('content').innerHTML='<div style="text-align:center;padding:60px 20px"><div class="spinner"></div><div style="color:#555;font-size:14px">Loading notes...</div></div>';
+  const fetched=await fetchNotesFromGist();
+  if(fetched===null){
+    document.getElementById('content').innerHTML='<div class="empty">Could not load notes. Check connection.</div>';
+    return;
+  }
+  phoneNotes=fetched.filter(n=>!n.done).sort((a,b)=>b.ts-a.ts);
+  renderNotes();
+}
+
+function renderNotes(){
+  let html='<div class="notes-sync-row">'
+    +'<button class="sync-btn" onclick="loadNotesTab()">↻ Refresh</button>'
+    +'<span class="sync-msg" id="notes-sync-msg"></span>'
+    +'</div>'
+    +'<div class="note-input-row">'
+    +'<textarea class="note-textarea" id="note-input" placeholder="Write a note to sync with GSM..." rows="3"></textarea>'
+    +'<button class="note-add-btn" onclick="addPhoneNote()">+ Add Note</button>'
+    +'</div>';
+  if(!phoneNotes.length){
+    html+='<div class="empty">No notes yet. Write one above — it will sync to GSM.</div>';
+  } else {
+    phoneNotes.forEach((n,i)=>{
+      html+=`<div class="note-card" id="note-${n.id}">
+        <div class="note-text">${n.text.replace(/</g,'&lt;')}</div>
+        <div class="note-meta">${n.source==='gsm'?'From GSM · ':''}${noteTs(n.ts)}</div>
+        <div class="note-btns">
+          <button class="nbtn done-btn" onclick="markNoteDone('${n.id}')">✓ Done — delete after sync</button>
+          <button class="nbtn del-btn" onclick="deletePhoneNote('${n.id}')">🗑</button>
+        </div>
+      </div>`;
+    });
+  }
+  document.getElementById('content').innerHTML=html;
+}
+
+async function addPhoneNote(){
+  const ta=document.getElementById('note-input');
+  const text=(ta?.value||'').trim();
+  if(!text)return;
+  const note={id:'phone_'+Date.now(),text,ts:Date.now(),source:'phone',done:false};
+  phoneNotes=[note,...phoneNotes];
+  ta.value='';
+  renderNotes();
+  await pushNotesToGist(phoneNotes);
+  const msg=document.getElementById('notes-sync-msg');
+  if(msg){msg.textContent='✓ Note synced';setTimeout(()=>{if(msg)msg.textContent='';},2000);}
+}
+
+async function markNoteDone(id){
+  // Mark done = auto-delete from phone after sync to GSM
+  phoneNotes=phoneNotes.filter(n=>n.id!==id);
+  renderNotes();
+  // Push remaining (without the done note) so GSM sees it's gone
+  await pushNotesToGist(phoneNotes);
+  const msg=document.getElementById('notes-sync-msg');
+  if(msg){msg.textContent='✓ Deleted after sync';setTimeout(()=>{if(msg)msg.textContent='';},2000);}
+}
+
+async function deletePhoneNote(id){
+  phoneNotes=phoneNotes.filter(n=>n.id!==id);
+  renderNotes();
+  await pushNotesToGist(phoneNotes);
+}
 
 function ldk(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function sdk(s){if(!s)return'';const d=(typeof s==='string'&&s.length===10)?new Date(s+'T00:00:00'):new Date(s);return ldk(d)}
@@ -163,7 +275,7 @@ async function loadData(){
 }
 
 function switchTab(t,el){tab=t;document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');render();}
-function render(){if(!data)return;tab==='list'?renderList():renderMatrix();}
+function render(){if(!data&&tab!=='notes')return;if(tab==='list')renderList();else if(tab==='matrix')renderMatrix();else if(tab==='notes')loadNotesTab();}
 
 function days7(){const now=new Date(),days=[];for(let i=0;i<7;i++){const d=new Date(now);d.setDate(now.getDate()+i);days.push(d);}return days;}
 function days3(){const now=new Date(),days=[];for(let i=0;i<3;i++){const d=new Date(now);d.setDate(now.getDate()+i);days.push(d);}return days;}
