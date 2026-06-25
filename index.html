@@ -47,9 +47,9 @@ body{background:#0b0f14;color:#e8edf2;font-family:-apple-system,BlinkMacSystemFo
 .athlete-list{margin:6px 0 4px;display:flex;flex-direction:column;gap:4px}
 .athlete-row{display:flex;justify-content:space-between;align-items:center;font-size:12px}
 .aname{color:#c8d0dc}
-.paid-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:7px}
-.paid-badge.paid{background:rgba(0,212,170,0.12);color:#00d4aa}
-.paid-badge.unpaid{background:rgba(245,166,35,0.12);color:#f5a623}
+.paid-toggle{font-size:10px;font-weight:700;padding:3px 9px;border-radius:7px;cursor:pointer;border:1px solid;transition:all 0.15s}
+.paid-toggle.paid{background:rgba(0,212,170,0.12);border-color:rgba(0,212,170,0.4);color:#00d4aa}
+.paid-toggle.unpaid{background:rgba(245,166,35,0.12);border-color:rgba(245,166,35,0.4);color:#f5a623}
 .enotes{font-size:11px;color:#666;margin-top:6px;font-style:italic;line-height:1.4}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:200;display:flex;align-items:flex-end}
 .sheet{background:#1a1f27;border-radius:20px 20px 0 0;width:100%;max-height:85vh;overflow-y:auto;padding:16px 18px calc(16px + env(safe-area-inset-bottom,0px))}
@@ -526,7 +526,72 @@ function openBriefingMessages(){
   window.open(url,'_blank');
 }
 
-window._evs=[];
+// ── Event delegation — handles all card button clicks safely ──
+document.addEventListener('click', function(e) {
+  // Maps link
+  const loc = e.target.closest('.eloc');
+  if(loc) { openMaps(loc.dataset.addr); return; }
+
+  // Action buttons
+  const btn = e.target.closest('[data-action]');
+  if(btn) {
+    const idx = parseInt(btn.dataset.idx);
+    const ev = window._evs[idx];
+    if(!ev) return;
+    const action = btn.dataset.action;
+    if(action === 'confirm')  showMsg('Athlete Confirmation', buildConfirm(ev));
+    if(action === 'invite')   showMsg('Athlete Invitation',   buildInvite(ev));
+    if(action === 'messages') openMessages(ev);
+    if(action === 'coach')    showMsg('Coach Confirmation',   buildCoach(ev));
+    return;
+  }
+
+  // Paid toggle buttons
+  const pt = e.target.closest('.paid-toggle');
+  if(pt) { markPaidToggle(pt); return; }
+});
+
+async function markPaidToggle(btn) {
+  const idx    = parseInt(btn.dataset.idx);
+  const ev     = window._evs[idx];
+  if(!ev) return;
+  const nowPaid = btn.dataset.paid === '1';
+  const newPaid = !nowPaid;
+
+  // Optimistic UI update
+  btn.textContent = newPaid ? '✓ Paid' : 'Mark Paid';
+  btn.className   = 'paid-toggle ' + (newPaid ? 'paid' : 'unpaid');
+  btn.dataset.paid = newPaid ? '1' : '0';
+
+  // Write back to helper
+  try {
+    let body;
+    if(ev.kind === 'group') {
+      body = { action:'mark_paid', kind:'group', progId:ev.prog.id, occId:ev.occ.id, athleteId:btn.dataset.aid, paid:newPaid };
+      // Update local data too
+      const occ = ev.occ;
+      if(!occ.paidAttendees) occ.paidAttendees=[];
+      if(newPaid) { if(!occ.paidAttendees.includes(btn.dataset.aid)) occ.paidAttendees.push(btn.dataset.aid); }
+      else occ.paidAttendees = occ.paidAttendees.filter(id=>id!==btn.dataset.aid);
+    } else if(ev.kind === 'private') {
+      const ath = parseInt(btn.dataset.ath);
+      body = { action:'mark_paid', kind:'private', sessionId:ev.session.id, athlete:ath, paid:newPaid };
+      if(ath===1) ev.session.paid  = newPaid;
+      if(ath===2) ev.session.paid2 = newPaid;
+    }
+    await fetch('http://127.0.0.1:27371/', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+  } catch(err) {
+    // Revert on failure
+    btn.textContent = nowPaid ? '✓ Paid' : 'Mark Paid';
+    btn.className   = 'paid-toggle ' + (nowPaid ? 'paid' : 'unpaid');
+    btn.dataset.paid = nowPaid ? '1' : '0';
+    alert('Could not save — make sure the helper is running on your Mac.');
+  }
+}
 
 function openMaps(address) {
   if(!address) return;
@@ -589,43 +654,47 @@ function ecHTML(ev, idx) {
   const ts = ev.startTime ? ft(ev.startTime) + (ev.endTime ? ' - ' + ft(ev.endTime) : '') : '';
   const cn = ev.lc ? (ev.lc.nickname || ev.lc.firstname || 'Coach') : 'MIZE';
   const cb = ev.kind === 'group' ? '<span class="cbadge">' + ev.count + ' athletes</span>' : '';
-  const invBtn = ev.kind === 'group' ? '<button class="mbtn invite" onclick="showMsg(\'Athlete Invitation\',buildInvite(_evs[' + idx + ']))">Athlete Invitation</button>' : '';
 
   // Address with maps link
+  const addr = ev.address || ev.location || '';
   const addrHtml = ev.location
-    ? '<div class="edetail eloc" onclick="openMaps(\'' + (ev.address || ev.location).replace(/'/g, "\\'") + '\')">'
+    ? '<div class="edetail eloc" data-addr="' + addr.replace(/"/g,'&quot;') + '">'
       + '📍 ' + ev.location + (ev.address ? ' · ' + ev.address : '') + '</div>'
     : '';
 
-  // Athletes + paid status
+  // Athletes + paid status + mark as paid buttons
   let athleteHtml = '';
-  if(ev.kind === 'group') {
+  if (ev.kind === 'group') {
     const attending = (ev.occ.attendees || []).map(id => (data.athletes || []).find(a => a.id === id)).filter(Boolean);
-    if(attending.length) {
+    if (attending.length) {
       athleteHtml = '<div class="athlete-list">';
       attending.forEach(a => {
         const paid = isPaidForAthlete(ev, a.id);
         const nm = athName(a);
         athleteHtml += '<div class="athlete-row">'
           + '<span class="aname">' + nm + '</span>'
-          + '<span class="paid-badge ' + (paid ? 'paid' : 'unpaid') + '">' + (paid ? '✓ Paid' : 'Unpaid') + '</span>'
+          + '<button class="paid-toggle ' + (paid ? 'paid' : 'unpaid') + '" '
+          + 'data-idx="' + idx + '" data-aid="' + a.id + '" data-paid="' + (paid?'1':'0') + '">'
+          + (paid ? '✓ Paid' : 'Mark Paid') + '</button>'
           + '</div>';
       });
       athleteHtml += '</div>';
     }
-  } else if(ev.kind === 'private') {
+  } else if (ev.kind === 'private') {
     const s = ev.session;
-    const a1 = (data.athletes || []).find(a => a.id === s.athleteId);
-    const a2 = s.athlete2Id ? (data.athletes || []).find(a => a.id === s.athlete2Id) : null;
     athleteHtml = '<div class="athlete-list">';
-    if(a1) {
-      const paid = !!s.paid;
-      athleteHtml += '<div class="athlete-row"><span class="aname">' + athName(a1) + '</span><span class="paid-badge ' + (paid ? 'paid' : 'unpaid') + '">' + (paid ? '✓ Paid' : 'Unpaid') + '</span></div>';
-    }
-    if(a2) {
-      const paid = !!s.paid2;
-      athleteHtml += '<div class="athlete-row"><span class="aname">' + athName(a2) + '</span><span class="paid-badge ' + (paid ? 'paid' : 'unpaid') + '">' + (paid ? '✓ Paid' : 'Unpaid') + '</span></div>';
-    }
+    [[s.athleteId, s.athleteName, !!s.paid, 1], [s.athlete2Id, s.athlete2Name, !!s.paid2, 2]]
+      .filter(([id]) => id)
+      .forEach(([id, fallbackName, paid, ath]) => {
+        const a = (data.athletes || []).find(x => x.id === id);
+        const nm = a ? athName(a) : (fallbackName || 'Athlete ' + ath);
+        athleteHtml += '<div class="athlete-row">'
+          + '<span class="aname">' + nm + '</span>'
+          + '<button class="paid-toggle ' + (paid ? 'paid' : 'unpaid') + '" '
+          + 'data-idx="' + idx + '" data-ath="' + ath + '" data-paid="' + (paid?'1':'0') + '">'
+          + (paid ? '✓ Paid' : 'Mark Paid') + '</button>'
+          + '</div>';
+      });
     athleteHtml += '</div>';
   }
 
@@ -633,7 +702,7 @@ function ecHTML(ev, idx) {
   const notes = getEvNotes(ev);
   const notesHtml = notes ? '<div class="enotes">📝 ' + notes + '</div>' : '';
 
-  return `<div class="ecard ${ev.kind}">
+  return `<div class="ecard ${ev.kind}" data-idx="${idx}">
   <div class="etype ${ev.kind}">${ev.kind === 'group' ? 'Group Session' : ev.kind === 'private' ? 'Private Session' : 'Meeting'}</div>
   <div class="ename">${ev.name}${cb}</div>
   ${ts ? `<div class="edetail">🕐 ${ts}</div>` : ''}
@@ -642,10 +711,10 @@ function ecHTML(ev, idx) {
   ${athleteHtml}
   ${notesHtml}
   <div class="btn-row">
-    <button class="mbtn athlete" onclick="showMsg('Athlete Confirmation',buildConfirm(_evs[${idx}]))">Athlete Confirmation</button>
-    ${invBtn}
-    <button class="mbtn msg" onclick="openMessages(_evs[${idx}])">✉ Open in Messages</button>
-    <button class="mbtn coach" onclick="showMsg('Coach Confirmation',buildCoach(_evs[${idx}]))">Coach Confirmation</button>
+    <button class="mbtn athlete" data-action="confirm" data-idx="${idx}">Athlete Confirmation</button>
+    ${ev.kind === 'group' ? `<button class="mbtn invite" data-action="invite" data-idx="${idx}">Athlete Invitation</button>` : ''}
+    <button class="mbtn msg" data-action="messages" data-idx="${idx}">✉ Open in Messages</button>
+    <button class="mbtn coach" data-action="coach" data-idx="${idx}">Coach Confirmation</button>
   </div>
 </div>`;
 }
