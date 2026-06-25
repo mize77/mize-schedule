@@ -415,40 +415,115 @@ function copyMsg(){
   });
 }
 
-function buildBriefing(){
+function buildBriefing(coach){
   const now=new Date();
-  const localToday=ldk(now);
   const DAY=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const MON=['January','February','March','April','May','June','July','August','September','October','November','December'];
-  let lines=['MIZE Coaching - Next 3 Days',''];
+  const greeting = coach
+    ? 'Hi ' + (coach.nickname||coach.firstname||'Coach') + ', here is the schedule for the next 3 days:'
+    : 'MIZE Coaching - Next 3 Days';
+  let lines=[greeting,''];
   days3().forEach((day,i)=>{
     const dk=ldk(day);
     const dayLbl=i===0?'Today':i===1?'Tomorrow':DAY[day.getDay()];
     const dateLbl=MON[day.getMonth()]+' '+day.getDate();
     const evs=getEvs(dk);
-    lines.push('- '+dayLbl+', '+dateLbl+' -');
-    if(!evs.length){lines.push('No sessions or meetings');lines.push('');}
+    lines.push('— '+dayLbl+', '+dateLbl+' —');
+    if(!evs.length){lines.push('No sessions');lines.push('');}
     else{
       evs.forEach(ev=>{
         const ts=ev.startTime?ft(ev.startTime)+(ev.endTime?' - '+ft(ev.endTime):''):'';
         const loc=ev.location||'';
-        lines.push([ts,ev.name,loc].filter(Boolean).join('  '));
+        // Mark sessions the coach is leading
+        const isLead = coach && ev.lc && (ev.lc.id === coach.id);
+        const marker = isLead ? '★ ' : '  ';
+        lines.push(marker+[ts,ev.name,loc].filter(Boolean).join('  '));
       });
       lines.push('');
     }
   });
-  lines.push('MIZE Goalie Coaching');
+  lines.push('Best greetings, MIZE');
   return lines.join('\n');
 }
 
+let _briefingCoach = null;
+
 function showBriefing(){
   if(!data){loadData().then(()=>showBriefing());return;}
-  const txt=buildBriefing();
+  const coaches=(data.coaches||[]).filter(c=>!c.isDefault);
+  // Build coach selector UI
+  let selectorHtml='<div style="margin-bottom:14px">'
+    +'<div style="font-size:11px;color:#555;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.06em">Send to coach</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:6px">';
+  selectorHtml+='<button id="brief-coach-none" onclick="selectBriefingCoach(null)" '
+    +'style="padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;'
+    +'background:rgba(0,212,170,0.15);border:1px solid rgba(0,212,170,0.4);color:#00d4aa">'
+    +'General</button>';
+  coaches.forEach(c=>{
+    const nm=c.nickname||c.firstname||'Coach';
+    selectorHtml+='<button id="brief-coach-'+c.id+'" onclick="selectBriefingCoach(\''+c.id+'\')" '
+      +'style="padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;'
+      +'background:#1a1f27;border:1px solid #2a2f3a;color:#888">'
+      +nm+'</button>';
+  });
+  selectorHtml+='</div></div>';
+
+  _briefingCoach=null;
+  const txt=buildBriefing(null);
   curMsg=txt;
+
   document.getElementById('modalTitle').textContent='3-Day Schedule Briefing';
-  document.getElementById('modalText').textContent=txt;
+  document.getElementById('modalText').innerHTML=
+    selectorHtml
+    +'<div id="briefing-body" style="font-family:-apple-system,sans-serif;font-size:13px;line-height:1.7;'
+    +'color:#c8d0dc;background:#161b22;border-radius:10px;padding:14px;white-space:pre-wrap;'
+    +'word-break:break-word;border:1px solid #2a2f3a;margin-bottom:14px">'+txt+'</div>';
   document.getElementById('copyBtn').textContent='Copy';
+  document.getElementById('copyBtn').onclick=()=>{
+    navigator.clipboard.writeText(curMsg).then(()=>{
+      document.getElementById('copyBtn').textContent='Copied!';
+      setTimeout(()=>document.getElementById('copyBtn').textContent='Copy',2000);
+    });
+  };
+  // Replace close button area with Copy + Open in Messages
+  const btnRow=document.querySelector('.sbtn-row');
+  if(btnRow){
+    btnRow.innerHTML=
+      '<button class="sbtn-copy" id="briefCopyBtn" onclick="document.getElementById(\'copyBtn\').click()">Copy</button>'
+      +'<button id="briefMsgBtn" style="flex:1;padding:13px;border-radius:10px;'
+      +'background:rgba(52,199,89,0.15);color:#34c759;font-size:14px;font-weight:700;'
+      +'border:1px solid rgba(52,199,89,0.4);cursor:pointer" onclick="openBriefingMessages()">'
+      +'✉ Open in Messages</button>'
+      +'<button class="sbtn-close" onclick="document.getElementById(\'modal\').style.display=\'none\'">Close</button>';
+  }
   document.getElementById('modal').style.display='flex';
+}
+
+function selectBriefingCoach(coachId){
+  const coaches=data.coaches||[];
+  _briefingCoach = coachId ? coaches.find(c=>c.id===coachId)||null : null;
+  // Update button styles
+  document.querySelectorAll('[id^="brief-coach-"]').forEach(btn=>{
+    btn.style.background='#1a1f27';
+    btn.style.borderColor='#2a2f3a';
+    btn.style.color='#888';
+  });
+  const active=document.getElementById('brief-coach-'+(coachId||'none'));
+  if(active){
+    active.style.background='rgba(0,212,170,0.15)';
+    active.style.borderColor='rgba(0,212,170,0.4)';
+    active.style.color='#00d4aa';
+  }
+  const txt=buildBriefing(_briefingCoach);
+  curMsg=txt;
+  const body=document.getElementById('briefing-body');
+  if(body) body.textContent=txt;
+}
+
+function openBriefingMessages(){
+  const phone=_briefingCoach?.phone||'';
+  const url='sms://'+phone+(curMsg?'&body='+encodeURIComponent(curMsg):'');
+  window.open(url,'_blank');
 }
 
 window._evs=[];
