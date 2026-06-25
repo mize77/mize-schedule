@@ -360,27 +360,110 @@ function buildConfirm(ev){
   return'';
 }
 
-function buildInvite(ev){
+function showInvite(ev) {
   if(typeof MIZE_MESSAGES === 'undefined') {
-    return 'Could not load message templates (messages.js). Check your connection and tap Refresh, then try again.';
+    showMsg('Error', 'Message templates not loaded. Tap Refresh and try again.');
+    return;
   }
-  const athletes=data.athletes||[];
-  if(ev.kind!=='group')return buildConfirm(ev);
-  const prog=ev.prog,occ=ev.occ;
-  // Build invite for athletes NOT yet attending
-  const attending=new Set(occ.attendees||[]);
-  const targets=athletes.filter(a=>!attending.has(a.id));
-  if(!targets.length)return'All athletes already registered.';
-  return targets.map(a=>MIZE_MESSAGES.groupInvite(
+  if(ev.kind !== 'group') { showMsg('Athlete Invitation', buildConfirm(ev)); return; }
+
+  const athletes = data.athletes || [];
+  const prog = ev.prog, occ = ev.occ;
+  const attending = new Set(occ.attendees || []);
+  const sessionRegion = occ.location || prog.location || '';
+
+  // Region rank — local athletes first
+  function regionScore(a) {
+    if(!a.region) return 3;
+    const sr = sessionRegion.toLowerCase();
+    const ar = (a.region||'').toLowerCase();
+    if(sr.includes(ar) || ar.includes(sr.split(' ')[0])) return 0; // local
+    if(ar.includes('oc') || ar.includes('orange')) return 1;
+    return 2;
+  }
+  // Level rank
+  const LRANK = {'Elite':5,'High Performance':4,'Advanced':3,'Intermediate':2,'Beginner':1};
+  function levelScore(a) { return LRANK[a.level] || 0; }
+
+  const eligible = athletes
+    .filter(a => a.invited !== false && !attending.has(a.id) && a.name)
+    .sort((a,b) => {
+      const rd = regionScore(a) - regionScore(b);
+      if(rd !== 0) return rd;
+      return levelScore(b) - levelScore(a); // higher level first within region
+    });
+
+  if(!eligible.length) { showMsg('Athlete Invitation', 'All eligible athletes are already registered.'); return; }
+
+  // Build the athlete selector view
+  let html = '<div style="margin-bottom:12px;font-size:11px;color:#555;text-transform:uppercase;letter-spacing:0.06em">Select athlete to invite</div>';
+  let lastRegion = null;
+  eligible.forEach((a, i) => {
+    const rs = regionScore(a);
+    const regionLabel = rs === 0 ? '📍 Local' : rs === 1 ? 'OC' : (a.region || 'Other');
+    if(regionLabel !== lastRegion) {
+      html += '<div style="font-size:10px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:0.06em;margin:10px 0 5px">' + regionLabel + '</div>';
+      lastRegion = regionLabel;
+    }
+    const nm = (a.nickname || a.name.split(' ')[0]);
+    const parent = a.parentNickname || (a.parentName||'').split(' ')[0];
+    const sub = [a.level, a.region].filter(Boolean).join(' · ');
+    html += '<button data-invite-idx="' + i + '" style="width:100%;text-align:left;padding:9px 11px;'
+      + 'border-radius:9px;border:1px solid #2a2f3a;background:#1a1f27;margin-bottom:5px;cursor:pointer">'
+      + '<div style="font-size:13px;font-weight:600;color:#e8edf2">' + a.name + '</div>'
+      + (sub ? '<div style="font-size:11px;color:#555;margin-top:2px">' + sub + '</div>' : '')
+      + '</button>';
+  });
+
+  document.getElementById('modalTitle').textContent = 'Athlete Invitation';
+  document.getElementById('modalText').innerHTML = html;
+  document.getElementById('copyBtn').textContent = 'Copy';
+  document.getElementById('copyBtn').onclick = copyMsg;
+  document.getElementById('modal').style.display = 'flex';
+
+  // Store eligible list for click handler
+  window._inviteEligible = eligible;
+  window._inviteEv = ev;
+}
+
+function showInviteForAthlete(a, ev) {
+  if(typeof MIZE_MESSAGES === 'undefined') return;
+  const prog = ev.prog, occ = ev.occ;
+  const msg = MIZE_MESSAGES.groupInvite(
     prog, occ, a.name, a.parentName,
     !!a.hasPackage, a.packageRemaining||0, a.couponCode||'',
-    false, // showPkgOffer — phone app has never offered this upsell; keep that behavior
+    false,
     a.parentNickname||'', a.nickname||'', a.futurePackage?.couponCode||'',
     !!a.hasFreePackage, a.freePackageCouponCode||'',
     a.messageToParent!==false, a.messageToAthlete===true,
     a.region, a.state
-  )).join('\n\n---\n\n');
+  );
+  curMsg = msg;
+  const phone = (a.messageToParent !== false && a.parentPhone)
+    ? a.parentPhone.replace(/\D/g,'')
+    : (a.messageToAthlete === true && a.phone) ? a.phone.replace(/\D/g,'') : '';
+
+  document.getElementById('modalTitle').textContent = 'Invite — ' + a.name.split(' ')[0];
+  document.getElementById('modalText').innerHTML =
+    '<div style="display:flex;gap:8px;margin-bottom:12px">'
+    + '<button onclick="showInvite(window._inviteEv)" style="padding:6px 12px;border-radius:8px;'
+    + 'font-size:12px;background:#1a1f27;border:1px solid #2a2f3a;color:#888;cursor:pointer">← Back</button>'
+    + (phone ? '<button onclick="openInviteMessages(\'' + phone + '\')" style="padding:6px 12px;border-radius:8px;'
+    + 'font-size:12px;background:rgba(52,199,89,0.15);border:1px solid rgba(52,199,89,0.4);color:#34c759;cursor:pointer;font-weight:700">✉ Open in Messages</button>' : '')
+    + '</div>'
+    + '<div style="font-family:-apple-system,sans-serif;font-size:13px;line-height:1.7;color:#c8d0dc;'
+    + 'background:#161b22;border-radius:10px;padding:14px;white-space:pre-wrap;word-break:break-word;'
+    + 'border:1px solid #2a2f3a">' + escHtml(msg) + '</div>';
+  document.getElementById('copyBtn').textContent = 'Copy';
+  document.getElementById('copyBtn').onclick = copyMsg;
 }
+
+function openInviteMessages(phone) {
+  const url = 'sms:' + phone + (curMsg ? '&body=' + encodeURIComponent(curMsg) : '');
+  window.location.href = url;
+}
+
+function buildInvite(ev) { return ''; } // kept for compatibility — showInvite() handles this now
 
 function buildCoach(ev){
   if(typeof MIZE_MESSAGES === 'undefined') {
@@ -509,7 +592,16 @@ document.addEventListener('click', function(e) {
   const loc = e.target.closest('.eloc');
   if(loc) { openMaps(loc.dataset.addr); return; }
 
-  // Action buttons
+  // Invite athlete selector buttons
+  const invBtn = e.target.closest('[data-invite-idx]');
+  if(invBtn) {
+    const i = parseInt(invBtn.dataset.inviteIdx);
+    const a = window._inviteEligible && window._inviteEligible[i];
+    if(a) showInviteForAthlete(a, window._inviteEv);
+    return;
+  }
+
+  // Action buttons on event cards
   const btn = e.target.closest('[data-action]');
   if(btn) {
     const idx = parseInt(btn.dataset.idx);
@@ -517,7 +609,7 @@ document.addEventListener('click', function(e) {
     if(!ev) return;
     const action = btn.dataset.action;
     if(action === 'confirm')  showMsg('Athlete Confirmation', buildConfirm(ev));
-    if(action === 'invite')   showMsg('Athlete Invitation',   buildInvite(ev));
+    if(action === 'invite')   showInvite(ev);
     if(action === 'messages') openMessages(ev);
     if(action === 'coach')    showMsg('Coach Confirmation',   buildCoach(ev));
     return;
@@ -601,27 +693,36 @@ function openMessages(ev) {
     const occ = ev.occ;
     const attending = (occ.attendees || []).map(id => athletes.find(a => a.id === id)).filter(Boolean);
     attending.forEach(a => {
-      if(a.messageToParent !== false && a.parentPhone) phones.push(a.parentPhone);
-      if(a.messageToAthlete === true && a.phone) phones.push(a.phone);
+      if(a.messageToParent !== false && a.parentPhone) phones.push(a.parentPhone.replace(/\D/g,''));
+      if(a.messageToAthlete === true && a.phone) phones.push(a.phone.replace(/\D/g,''));
     });
   } else if(ev.kind === 'private') {
     const s = ev.session;
     const a = athletes.find(x => x.id === s.athleteId);
     if(a) {
-      if(a.messageToParent !== false && a.parentPhone) phones.push(a.parentPhone);
-      if(a.messageToAthlete === true && a.phone) phones.push(a.phone);
+      if(a.messageToParent !== false && a.parentPhone) phones.push(a.parentPhone.replace(/\D/g,''));
+      if(a.messageToAthlete === true && a.phone) phones.push(a.phone.replace(/\D/g,''));
+    }
+    const a2 = s.athlete2Id ? athletes.find(x => x.id === s.athlete2Id) : null;
+    if(a2) {
+      if(a2.messageToParent !== false && a2.parentPhone) phones.push(a2.parentPhone.replace(/\D/g,''));
+      if(a2.messageToAthlete === true && a2.phone) phones.push(a2.phone.replace(/\D/g,''));
     }
   } else if(ev.kind === 'meeting') {
     const m = ev.meeting;
     const a = athletes.find(x => x.id === m.athleteId);
-    if(a) {
-      if(a.parentPhone) phones.push(a.parentPhone);
-    }
+    if(a && a.parentPhone) phones.push(a.parentPhone.replace(/\D/g,''));
   }
 
-  const recipients = phones.join(',');
-  const url = 'sms://' + recipients + (msg ? '&body=' + encodeURIComponent(msg) : '');
-  window.open(url, '_blank');
+  if(!phones.length) {
+    alert('No phone number found for this athlete. Please add a parent phone number in the Athlete Manager.');
+    return;
+  }
+
+  // iOS supports sms: with multiple recipients via ; separator
+  const recipients = phones.join(';');
+  const url = 'sms:' + recipients + (msg ? '&body=' + encodeURIComponent(msg) : '');
+  window.location.href = url;
 }
 
 function getEvNotes(ev) {
