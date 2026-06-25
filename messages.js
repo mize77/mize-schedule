@@ -200,18 +200,13 @@ const MIZE_MESSAGES = (function() {
     const openFees = []; // { label, amount } for payment itemization
 
     if(!isPaid && sf > 0) {
-      // Element 3 — session fee with breakdown when mileage is also present
       if(mf > 0) {
-        el3 = 'The fee for this session is $' + (sf + mf) + ' ($' + sf + ' session fee + $' + mf + ' mileage fee).';
-        // Payment line itemizes session and mileage separately so the total is clear
         openFees.push({ label: 'session fee', amount: sf });
         openFees.push({ label: 'mileage fee', amount: mf });
       } else {
-        el3 = 'The fee for this session is $' + sf + '.';
         openFees.push({ label: 'session fee', amount: sf });
       }
     } else if(!isPaid && mf > 0) {
-      // No session fee but there is a mileage fee (edge case)
       openFees.push({ label: 'mileage fee', amount: mf });
     }
 
@@ -220,16 +215,9 @@ const MIZE_MESSAGES = (function() {
       el4 = 'If ' + goalie + ' is planning to join consistently in my goalie sessions I would like to offer you the Goalie Performance Package with 6 group sessions for $750 which brings down the fee per session to just $125.';
     }
 
-    // Element 5 — pool fee (independent of session payment)
+    // Pool fee always goes into the payment line itemization
     if(pf > 0) {
-      el5 = 'There is an additional pool fee of $' + pf + ' that goes to the host family for providing their pool for this session.';
       openFees.push({ label: 'pool fee', amount: pf });
-    }
-
-    // Element 6 — mileage fee informational paragraph
-    if(!isPaid && mf > 0) {
-      const city = cityFromAddress(poolAddress);
-      el6 = 'The mileage fee for my drive out' + (city ? ' to ' + city : '') + ' is $' + mf + '.';
     }
 
     // Element 8 — single payment paragraph covering all open fees
@@ -260,7 +248,7 @@ const MIZE_MESSAGES = (function() {
     const el10 = 'I look forward seeing you there. Best greetings, MIZE';
 
     // ── Assemble — blank lines between non-empty elements ─────────────────
-    const elements = [el1, el2, el3, el4, el5, el6, el8].filter(Boolean);
+    const elements = [el1, el2, el4, el8].filter(Boolean);
     let body = elements.join('\n\n');
     if(el9) body += el9;           // pool note already starts with \n\n
     body += '\n\n' + el10;
