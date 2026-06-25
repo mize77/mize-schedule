@@ -41,6 +41,15 @@ body{background:#0b0f14;color:#e8edf2;font-family:-apple-system,BlinkMacSystemFo
 .mbtn.athlete{background:rgba(91,141,238,0.1);border-color:rgba(91,141,238,0.3);color:#5b8dee}
 .mbtn.invite{background:rgba(167,139,250,0.1);border-color:rgba(167,139,250,0.3);color:#a78bfa}
 .mbtn.coach{background:rgba(0,212,170,0.1);border-color:rgba(0,212,170,0.3);color:#00d4aa}
+.mbtn.msg{background:rgba(52,199,89,0.1);border-color:rgba(52,199,89,0.3);color:#34c759}
+.eloc{cursor:pointer;color:#5b8dee!important;text-decoration:underline}
+.athlete-list{margin:6px 0 4px;display:flex;flex-direction:column;gap:4px}
+.athlete-row{display:flex;justify-content:space-between;align-items:center;font-size:12px}
+.aname{color:#c8d0dc}
+.paid-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:7px}
+.paid-badge.paid{background:rgba(0,212,170,0.12);color:#00d4aa}
+.paid-badge.unpaid{background:rgba(245,166,35,0.12);color:#f5a623}
+.enotes{font-size:11px;color:#666;margin-top:6px;font-style:italic;line-height:1.4}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:200;display:flex;align-items:flex-end}
 .sheet{background:#1a1f27;border-radius:20px 20px 0 0;width:100%;max-height:85vh;overflow-y:auto;padding:16px 18px calc(16px + env(safe-area-inset-bottom,0px))}
 .handle{width:36px;height:4px;background:#2a2f3a;border-radius:2px;margin:0 auto 14px}
@@ -331,20 +340,123 @@ function showBriefing(){
 
 window._evs=[];
 
-function ecHTML(ev,idx){
-  const ts=ev.startTime?ft(ev.startTime)+(ev.endTime?' - '+ft(ev.endTime):''):'';
-  const cn=ev.lc?(ev.lc.nickname||ev.lc.firstname||'Coach'):'MIZE';
-  const cb=ev.kind==='group'?'<span class="cbadge">'+ev.count+' athletes</span>':'';
-  const invBtn=ev.kind==='group'?'<button class="mbtn invite" onclick="showMsg(\'Athlete Invitation\',buildInvite(_evs['+idx+']))">Athlete Invitation</button>':'';
-  return`<div class="ecard ${ev.kind}">
-  <div class="etype ${ev.kind}">${ev.kind==='group'?'Group Session':ev.kind==='private'?'Private Session':'Meeting'}</div>
+function openMaps(address) {
+  if(!address) return;
+  window.open('maps://maps.apple.com/?q=' + encodeURIComponent(address), '_blank');
+}
+
+function openMessages(ev) {
+  const athletes = data.athletes || [];
+  let phones = [];
+  let msg = buildConfirm(ev);
+
+  if(ev.kind === 'group') {
+    const occ = ev.occ;
+    const attending = (occ.attendees || []).map(id => athletes.find(a => a.id === id)).filter(Boolean);
+    attending.forEach(a => {
+      if(a.messageToParent !== false && a.parentPhone) phones.push(a.parentPhone);
+      if(a.messageToAthlete === true && a.phone) phones.push(a.phone);
+    });
+  } else if(ev.kind === 'private') {
+    const s = ev.session;
+    const a = athletes.find(x => x.id === s.athleteId);
+    if(a) {
+      if(a.messageToParent !== false && a.parentPhone) phones.push(a.parentPhone);
+      if(a.messageToAthlete === true && a.phone) phones.push(a.phone);
+    }
+  } else if(ev.kind === 'meeting') {
+    const m = ev.meeting;
+    const a = athletes.find(x => x.id === m.athleteId);
+    if(a) {
+      if(a.parentPhone) phones.push(a.parentPhone);
+    }
+  }
+
+  const recipients = phones.join(',');
+  const url = 'sms://' + recipients + (msg ? '&body=' + encodeURIComponent(msg) : '');
+  window.open(url, '_blank');
+}
+
+function getEvNotes(ev) {
+  if(ev.kind === 'group') return ev.occ.notes || '';
+  if(ev.kind === 'private') return ev.session.notes || '';
+  if(ev.kind === 'meeting') return ev.meeting.notes || '';
+  return '';
+}
+
+function isPaidForAthlete(ev, athleteId) {
+  if(ev.kind === 'group') {
+    const occ = ev.occ;
+    return (occ.paidAttendees||[]).includes(athleteId) || (occ.pkgAttendees||[]).includes(athleteId) || (occ.freeAttendees||[]).includes(athleteId);
+  }
+  if(ev.kind === 'private') {
+    const s = ev.session;
+    if(s.athleteId === athleteId) return !!s.paid;
+    if(s.athlete2Id === athleteId) return !!s.paid2;
+  }
+  return false;
+}
+
+function ecHTML(ev, idx) {
+  const ts = ev.startTime ? ft(ev.startTime) + (ev.endTime ? ' - ' + ft(ev.endTime) : '') : '';
+  const cn = ev.lc ? (ev.lc.nickname || ev.lc.firstname || 'Coach') : 'MIZE';
+  const cb = ev.kind === 'group' ? '<span class="cbadge">' + ev.count + ' athletes</span>' : '';
+  const invBtn = ev.kind === 'group' ? '<button class="mbtn invite" onclick="showMsg(\'Athlete Invitation\',buildInvite(_evs[' + idx + ']))">Athlete Invitation</button>' : '';
+
+  // Address with maps link
+  const addrHtml = ev.location
+    ? '<div class="edetail eloc" onclick="openMaps(\'' + (ev.address || ev.location).replace(/'/g, "\\'") + '\')">'
+      + '📍 ' + ev.location + (ev.address ? ' · ' + ev.address : '') + '</div>'
+    : '';
+
+  // Athletes + paid status
+  let athleteHtml = '';
+  if(ev.kind === 'group') {
+    const attending = (ev.occ.attendees || []).map(id => (data.athletes || []).find(a => a.id === id)).filter(Boolean);
+    if(attending.length) {
+      athleteHtml = '<div class="athlete-list">';
+      attending.forEach(a => {
+        const paid = isPaidForAthlete(ev, a.id);
+        const nm = athName(a);
+        athleteHtml += '<div class="athlete-row">'
+          + '<span class="aname">' + nm + '</span>'
+          + '<span class="paid-badge ' + (paid ? 'paid' : 'unpaid') + '">' + (paid ? '✓ Paid' : 'Unpaid') + '</span>'
+          + '</div>';
+      });
+      athleteHtml += '</div>';
+    }
+  } else if(ev.kind === 'private') {
+    const s = ev.session;
+    const a1 = (data.athletes || []).find(a => a.id === s.athleteId);
+    const a2 = s.athlete2Id ? (data.athletes || []).find(a => a.id === s.athlete2Id) : null;
+    athleteHtml = '<div class="athlete-list">';
+    if(a1) {
+      const paid = !!s.paid;
+      athleteHtml += '<div class="athlete-row"><span class="aname">' + athName(a1) + '</span><span class="paid-badge ' + (paid ? 'paid' : 'unpaid') + '">' + (paid ? '✓ Paid' : 'Unpaid') + '</span></div>';
+    }
+    if(a2) {
+      const paid = !!s.paid2;
+      athleteHtml += '<div class="athlete-row"><span class="aname">' + athName(a2) + '</span><span class="paid-badge ' + (paid ? 'paid' : 'unpaid') + '">' + (paid ? '✓ Paid' : 'Unpaid') + '</span></div>';
+    }
+    athleteHtml += '</div>';
+  }
+
+  // Notes
+  const notes = getEvNotes(ev);
+  const notesHtml = notes ? '<div class="enotes">📝 ' + notes + '</div>' : '';
+
+  return `<div class="ecard ${ev.kind}">
+  <div class="etype ${ev.kind}">${ev.kind === 'group' ? 'Group Session' : ev.kind === 'private' ? 'Private Session' : 'Meeting'}</div>
   <div class="ename">${ev.name}${cb}</div>
-  ${ts?`<div class="edetail">${ts}</div>`:''}
-  ${ev.location?`<div class="edetail">${ev.location}${ev.address?' · '+ev.address:''}</div>`:''}
+  ${ts ? `<div class="edetail">🕐 ${ts}</div>` : ''}
+  ${addrHtml}
   <div class="ecoach">Lead: <span class="cpill">${cn}</span></div>
+  ${athleteHtml}
+  ${notesHtml}
   <div class="btn-row">
     <button class="mbtn athlete" onclick="showMsg('Athlete Confirmation',buildConfirm(_evs[${idx}]))">Athlete Confirmation</button>
     ${invBtn}
+    <button class="mbtn msg" onclick="openMessages(_evs[${idx}])">✉ Open in Messages</button>
     <button class="mbtn coach" onclick="showMsg('Coach Confirmation',buildCoach(_evs[${idx}]))">Coach Confirmation</button>
   </div>
 </div>`;
