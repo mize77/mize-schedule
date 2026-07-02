@@ -104,7 +104,7 @@ const MIZE_MESSAGES = (function() {
   // ── Program name helper ──────────────────────────────────────────────────
   // Drops the region/level suffix after a dash: 'Goalie Group - OC' → 'Goalie Group'
   function shortProgName(name) {
-    return (name||'').split(/\s*[–—-]\s*/)[0].replace(/\s*\d+\s*$/, '').trim();
+    return (name||'').trim();
   }
 
   // ── City extraction ──────────────────────────────────────────────────────
