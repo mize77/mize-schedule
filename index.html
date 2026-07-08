@@ -126,6 +126,7 @@ body{background:#0b0f14;color:#e8edf2;font-family:-apple-system,BlinkMacSystemFo
     <div class="tab active" onclick="switchTab('list',this)">List</div>
     <div class="tab" onclick="switchTab('matrix',this)">Schedule</div>
     <div class="tab" onclick="switchTab('notes',this)">Notes</div>
+    <div class="tab" onclick="switchTab('events',this)">Events</div>
   </div>
 </div>
 <div id="last-upd" class="last-upd"></div>
@@ -148,7 +149,9 @@ body{background:#0b0f14;color:#e8edf2;font-family:-apple-system,BlinkMacSystemFo
 <script>
 const GIST_URL='https://gist.githubusercontent.com/mize77/57fe1173e91ff569c66fb4af80287def/raw/mize_schedule.json';
 const NOTES_GIST_ID='57fe1173e91ff569c66fb4af80287def';
-const NOTES_GIST_TOKEN=['ghp_lHBnBSR','NgfCj7zFXQ','TGumkblfI1','BsN4WOfBW'].join('');
+let NOTES_GIST_TOKEN='';
+// Fetch token from local helper (avoids storing token in published code)
+fetch('http://127.0.0.1:27371/gist_token').then(r=>r.text()).then(t=>{NOTES_GIST_TOKEN=t.trim();}).catch(()=>{});
 const HS=8,HE=22,SH=28,SLOTS=(HE-HS)*2;
 let data=null,tab='list',curMsg='';
 let phoneNotes=[];  // notes array synced with Gist
@@ -276,7 +279,58 @@ async function loadData(){
 }
 
 function switchTab(t,el){tab=t;document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');render();}
-function render(){if(!data&&tab!=='notes')return;if(tab==='list')renderList();else if(tab==='matrix')renderMatrix();else if(tab==='notes')loadNotesTab();}
+function render(){if(!data&&tab!=='notes')return;if(tab==='list')renderList();else if(tab==='matrix')renderMatrix();else if(tab==='notes')loadNotesTab();else if(tab==='events')renderEvents();}
+
+function renderEvents() {
+  const el = document.getElementById('content');
+  const evList = (data.events||[]).slice().sort((a,b)=>(a.startDate||'').localeCompare(b.startDate||''));
+  if(evList.length===0) {
+    el.innerHTML = '<div style="text-align:center;padding:60px 20px;color:#555;font-size:14px">No event PDFs yet.</div>';
+    return;
+  }
+  el.innerHTML = '<div style="padding:16px">'
+    + evList.map(ev => {
+        const ath = (data.athletes||[]).find(a=>a.id===ev.athleteId);
+        const trav = (data.travels||[]).find(t=>t.id===ev.travelId);
+        const fmtDate = s => { if(!s) return ''; const [y,m,d]=s.split('-'); return m+'/'+d+'/'+y; };
+        const dateRange = ev.startDate===ev.endDate ? fmtDate(ev.startDate) : fmtDate(ev.startDate)+' – '+fmtDate(ev.endDate);
+        return '<div style="background:#1a1a2e;border:1px solid rgba(0,212,170,0.3);border-radius:12px;margin-bottom:12px;padding:14px 16px">'
+          +'<div style="font-weight:700;font-size:15px;color:#e8edf2;margin-bottom:4px">'+ev.eventName+'</div>'
+          +'<div style="font-size:12px;color:#888;margin-bottom:8px">'+(ath?ath.name||'':'')+(dateRange?' · '+dateRange:'')+'</div>'
+          +(trav?'<div style="font-size:11px;color:#5b8dee;margin-bottom:8px">✈ '+trav.eventName+' ('+fmtDate(trav.depDate)+')</div>':'')
+          +'<button onclick="previewEventPdf(\''+ev.id+'\')" style="width:100%;padding:8px;border-radius:8px;background:rgba(0,212,170,0.15);border:1px solid rgba(0,212,170,0.4);color:#00d4aa;font-size:13px;font-weight:600;cursor:pointer">View PDF</button>'
+          +'</div>';
+      }).join('')
+    + '</div>';
+}
+
+function previewEventPdf(eventId) {
+  if(!data) return;
+  const ev = (data.events||[]).find(e=>e.id===eventId);
+  if(!ev) return;
+  const ath = (data.athletes||[]).find(a=>a.id===ev.athleteId);
+  const trav = (data.travels||[]).find(t=>t.id===ev.travelId)||null;
+  if(!window.MIZE_MESSAGES||!ath) { alert('Cannot generate PDF — missing athlete data.'); return; }
+  // Build the PDF HTML using the same logic as GSM
+  // We pass the event form data + athlete + travel to window.generateOverviewHTML if available
+  if(typeof window.generateEventOverviewHTML === 'function') {
+    const html = window.generateEventOverviewHTML(ev, ath, trav);
+    if(!html) return;
+    const w = window.open('','_blank');
+    if(!w) { alert('Please allow popups.'); return; }
+    w.document.write(html); w.document.close();
+  } else {
+    // Fallback: show event info as text
+    const el = document.getElementById('content');
+    el.innerHTML = '<div style="padding:20px;font-size:13px;color:#ccc">'
+      +'<b style="color:#00d4aa;font-size:16px">'+ev.eventName+'</b><br><br>'
+      +'<b>Athlete:</b> '+(ath?ath.name||'':'Unknown')+'<br>'
+      +'<b>Dates:</b> '+ev.startDate+' – '+ev.endDate+'<br>'
+      +(trav?'<b>Travel:</b> '+trav.eventName+'<br>':'')
+      +'<br><button onclick="render()" style="padding:8px 16px;border-radius:8px;background:rgba(255,255,255,0.1);border:1px solid #333;color:#ccc;font-size:13px;cursor:pointer">Back</button>'
+      +'</div>';
+  }
+}
 
 function days7(){const now=new Date(),days=[];for(let i=0;i<7;i++){const d=new Date(now);d.setDate(now.getDate()+i);days.push(d);}return days;}
 function days3(){const now=new Date(),days=[];for(let i=0;i<3;i++){const d=new Date(now);d.setDate(now.getDate()+i);days.push(d);}return days;}
