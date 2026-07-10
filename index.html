@@ -474,13 +474,19 @@ function renderPicker(title) {
     textEl.parentNode.insertBefore(pickerDiv, textEl);
   }
   pickerDiv.style.display = 'flex';
+  pickerDiv.style.flexDirection = 'column';
+  pickerDiv.style.flex = '1';
+  pickerDiv.style.minHeight = '0';
   pickerDiv.innerHTML = `
-    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">${nameButtons}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #2a2f3a">
+      ${nameButtons}
+    </div>
     <div id="picker-msg" style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:#e8edf2;
-      max-height:42vh;overflow-y:auto;border:1px solid #2a2f3a;border-radius:8px;padding:12px;
-      background:rgba(0,0,0,0.3)">${msg}</div>
-    <div style="display:flex;gap:8px;margin-top:12px">
-      <button onclick="copyPickerMsg()" style="flex:1;padding:10px;border-radius:8px;
+      flex:1;overflow-y:auto;padding:4px 2px">
+      ${msg}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #2a2f3a">
+      <button onclick="copyPickerMsg()" id="picker-copy-btn" style="flex:1;padding:10px;border-radius:8px;
         background:rgba(0,212,170,0.15);border:1px solid rgba(0,212,170,0.4);
         color:#00d4aa;font-size:14px;font-weight:600;cursor:pointer">Copy</button>
       ${phone ? `<button onclick="openPickerMessages('${phone}')" style="flex:1;padding:10px;border-radius:8px;
@@ -502,10 +508,9 @@ function copyPickerMsg() {
   const el = document.createElement('textarea');
   el.value = msg; document.body.appendChild(el); el.select();
   document.execCommand('copy'); document.body.removeChild(el);
-  const btn = document.querySelector('#picker-ui button');
-  // Flash copy button
-  const copyBtn = document.querySelector('#picker-ui .copy-flash');
   curMsg = msg;
+  const btn = document.getElementById('picker-copy-btn');
+  if(btn){ btn.textContent='Copied!'; setTimeout(()=>btn.textContent='Copy',2000); }
 }
 
 function openPickerMessages(phone) {
