@@ -134,14 +134,14 @@ body{background:#0b0f14;color:#e8edf2;font-family:-apple-system,BlinkMacSystemFo
   <div style="text-align:center;padding:80px 20px"><div class="spinner"></div><div style="color:#555;font-size:14px">Loading schedule...</div></div>
 </div>
 
-<div class="modal" id="modal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+<div class="modal" id="modal" style="display:none" onclick="if(event.target===this){closePicker();}">
   <div class="sheet">
     <div class="handle"></div>
     <div class="sheet-title" id="modalTitle"></div>
     <div class="msg-text" id="modalText"></div>
     <div class="sbtn-row">
       <button class="sbtn-copy" id="copyBtn" onclick="copyMsg()">Copy</button>
-      <button class="sbtn-close" onclick="document.getElementById('modal').style.display='none'">Close</button>
+      <button class="sbtn-close" onclick="closePicker()">Close</button>
     </div>
   </div>
 </div>
@@ -378,18 +378,19 @@ function buildConfirm(ev){
     const occ=ev.occ,prog=ev.prog;
     const attending=(occ.attendees||[]).map(id=>athletes.find(a=>a.id===id)).filter(Boolean);
     if(!attending.length)return'No athletes registered yet.';
+    // Return array of {athlete, message} for the picker
     return attending.map(a=>{
       const isPaid=(occ.paidAttendees||[]).includes(a.id)||(occ.pkgAttendees||[]).includes(a.id)||(occ.freeAttendees||[]).includes(a.id)||!!a.hasFreePackage;
-      return MIZE_MESSAGES.groupConfirm(
-        prog, occ, a.name, a.parentName, isPaid,
-        a.parentNickname||'', a.nickname||'',
-        a.messageToParent!==false, a.messageToAthlete===true,
-        a.region, a.state,
-        false,    // showPkgOffer
-        pools,    // pool list for access notes lookup
-        a.poolId  // athlete's own pool id — skips access notes if matches
-      );
-    }).join('\n\n---\n\n');
+      return {
+        athlete: a,
+        message: MIZE_MESSAGES.groupConfirm(
+          prog, occ, a.name, a.parentName, isPaid,
+          a.parentNickname||'', a.nickname||'',
+          a.messageToParent!==false, a.messageToAthlete===true,
+          a.region, a.state, false, pools, a.poolId
+        )
+      };
+    });
   }
   if(ev.kind==='private'){
     const s=ev.session;
@@ -398,10 +399,7 @@ function buildConfirm(ev){
       s, a?.name, a?.parentName, true,
       a?.parentNickname||'', a?.nickname||'',
       a?.messageToParent!==false, a?.messageToAthlete===true,
-      a?.region, a?.state,
-      false,      // showPkgOffer
-      pools,      // pool list for access notes lookup
-      a?.poolId   // athlete's own pool id
+      a?.region, a?.state, false, pools, a?.poolId
     );
   }
   if(ev.kind==='meeting'){
@@ -412,6 +410,119 @@ function buildConfirm(ev){
     );
   }
   return'';
+}
+
+function showConfirm(ev) {
+  if(!data){loadData().then(()=>showConfirm(ev));return;}
+  if(typeof MIZE_MESSAGES==='undefined'){showMsg('Error','Message templates not loaded. Tap Refresh.');return;}
+
+  // Group session — show athlete picker
+  if(ev.kind==='group'){
+    const result = buildConfirm(ev);
+    if(typeof result === 'string'){showMsg('Athlete Confirmation', result);return;}
+    if(!result.length){showMsg('Athlete Confirmation','No athletes registered yet.');return;}
+    showAthletePicker('Athlete Confirmation', result);
+    return;
+  }
+  // Private/meeting — show message directly
+  showMsg('Athlete Confirmation', buildConfirm(ev));
+}
+
+let _pickerItems = [];
+let _pickerIdx = 0;
+
+function showAthletePicker(title, items) {
+  _pickerItems = items;
+  _pickerIdx = 0;
+  renderPicker(title);
+}
+
+function renderPicker(title) {
+  const items = _pickerItems;
+  const idx = _pickerIdx;
+  const item = items[idx];
+  if(!item) return;
+  const a = item.athlete;
+  const msg = item.message;
+  const phone = (a.messageToParent !== false && a.parentPhone)
+    ? a.parentPhone.replace(/\D/g,'')
+    : (a.messageToAthlete === true && a.phone) ? a.phone.replace(/\D/g,'') : '';
+  const name = (a.nickname || a.name.split(' ')[0]);
+
+  // Build picker HTML
+  const nameButtons = items.map((it,i) => {
+    const n = it.athlete.nickname || it.athlete.name.split(' ')[0];
+    const active = i===idx;
+    return `<button onclick="selectPickerAthlete(${i})"
+      style="padding:6px 14px;border-radius:20px;font-size:13px;font-weight:${active?700:500};
+      cursor:pointer;border:1px solid ${active?'#00d4aa':'#333'};
+      background:${active?'rgba(0,212,170,0.15)':'rgba(255,255,255,0.05)'};
+      color:${active?'#00d4aa':'#aaa'}">${n}</button>`;
+  }).join('');
+
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modal').style.display = 'flex';
+
+  // Replace modal content with picker UI
+  const textEl = document.getElementById('modalText');
+  textEl.style.display = 'none';
+
+  let pickerDiv = document.getElementById('picker-ui');
+  if(!pickerDiv){
+    pickerDiv = document.createElement('div');
+    pickerDiv.id = 'picker-ui';
+    textEl.parentNode.insertBefore(pickerDiv, textEl);
+  }
+  pickerDiv.style.display = 'flex';
+  pickerDiv.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">${nameButtons}</div>
+    <div id="picker-msg" style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:#e8edf2;
+      max-height:42vh;overflow-y:auto;border:1px solid #2a2f3a;border-radius:8px;padding:12px;
+      background:rgba(0,0,0,0.3)">${msg}</div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button onclick="copyPickerMsg()" style="flex:1;padding:10px;border-radius:8px;
+        background:rgba(0,212,170,0.15);border:1px solid rgba(0,212,170,0.4);
+        color:#00d4aa;font-size:14px;font-weight:600;cursor:pointer">Copy</button>
+      ${phone ? `<button onclick="openPickerMessages('${phone}')" style="flex:1;padding:10px;border-radius:8px;
+        background:rgba(52,199,89,0.15);border:1px solid rgba(52,199,89,0.4);
+        color:#34c759;font-size:14px;font-weight:600;cursor:pointer">Open in Messages</button>` : ''}
+    </div>
+  `;
+  curMsg = msg;
+  document.getElementById('copyBtn').style.display = 'none';
+}
+
+function selectPickerAthlete(idx) {
+  _pickerIdx = idx;
+  renderPicker(document.getElementById('modalTitle').textContent);
+}
+
+function copyPickerMsg() {
+  const msg = _pickerItems[_pickerIdx]?.message || '';
+  const el = document.createElement('textarea');
+  el.value = msg; document.body.appendChild(el); el.select();
+  document.execCommand('copy'); document.body.removeChild(el);
+  const btn = document.querySelector('#picker-ui button');
+  // Flash copy button
+  const copyBtn = document.querySelector('#picker-ui .copy-flash');
+  curMsg = msg;
+}
+
+function openPickerMessages(phone) {
+  const msg = _pickerItems[_pickerIdx]?.message || '';
+  const el = document.createElement('textarea');
+  el.value = msg; document.body.appendChild(el); el.select();
+  document.execCommand('copy'); document.body.removeChild(el);
+  window.open('sms:+1'+phone+'&body='+encodeURIComponent(msg), '_blank');
+}
+
+function closePicker() {
+  const pickerDiv = document.getElementById('picker-ui');
+  if(pickerDiv) { pickerDiv.style.display='none'; pickerDiv.innerHTML=''; }
+  document.getElementById('modalText').style.display = '';
+  document.getElementById('copyBtn').style.display = '';
+  document.getElementById('modal').style.display = 'none';
+  _pickerItems = []; _pickerIdx = 0;
 }
 
 function showInvite(ev) {
@@ -662,7 +773,7 @@ document.addEventListener('click', function(e) {
     const ev = window._evs[idx];
     if(!ev) return;
     const action = btn.dataset.action;
-    if(action === 'confirm')  showMsg('Athlete Confirmation', buildConfirm(ev));
+    if(action === 'confirm')  showConfirm(ev);
     if(action === 'invite')   showInvite(ev);
     if(action === 'messages') openMessages(ev);
     if(action === 'coach')    showMsg('Coach Confirmation',   buildCoach(ev));
@@ -928,7 +1039,7 @@ function renderMatrix(){
 
 function showEvDetail(idx){
   const ev=window._evs[idx];if(!ev)return;
-  showMsg('Athlete Confirmation',buildConfirm(ev));
+  showConfirm(ev);
 }
 
 loadData();
