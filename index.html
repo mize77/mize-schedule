@@ -379,7 +379,7 @@ function buildConfirm(ev){
     const attending=(occ.attendees||[]).map(id=>athletes.find(a=>a.id===id)).filter(Boolean);
     if(!attending.length)return'No athletes registered yet.';
     return attending.map(a=>{
-      const isPaid=(occ.paidAttendees||[]).includes(a.id)||(occ.pkgAttendees||[]).includes(a.id);
+      const isPaid=(occ.paidAttendees||[]).includes(a.id)||(occ.pkgAttendees||[]).includes(a.id)||(occ.freeAttendees||[]).includes(a.id)||!!a.hasFreePackage;
       return MIZE_MESSAGES.groupConfirm(
         prog, occ, a.name, a.parentName, isPaid,
         a.parentNickname||'', a.nickname||'',
