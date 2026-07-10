@@ -215,8 +215,8 @@ const MIZE_MESSAGES = (function() {
       el4 = 'If ' + goalie + ' is planning to join consistently in my goalie sessions I would like to offer you the Goalie Performance Package with 6 group sessions for $750 which brings down the fee per session to just $125.';
     }
 
-    // Pool fee always goes into the payment line itemization
-    if(pf > 0) {
+    // Pool fee — skipped for pool owner/host (they don't pay their own pool fee)
+    if(pf > 0 && !isPoolOwner) {
       openFees.push({ label: 'pool fee', amount: pf });
     }
 
@@ -303,7 +303,7 @@ const MIZE_MESSAGES = (function() {
       poolAddress:  occ.address   || prog.address,
       sessionFee:   Number(prog.sessionFee||175),
       mileageFee:   0,
-      poolFee:      Number(occ.poolFee||prog.poolFee||0),
+      poolFee:      isPoolOwner ? 0 : Number(occ.poolFee||prog.poolFee||0),
       isPaid:       !!isPaid,
       showPkgOffer: !!showPkgOffer,
       isPoolOwner,
