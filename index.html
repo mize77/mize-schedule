@@ -562,7 +562,9 @@ function showInvite(ev) {
     .sort((a,b) => {
       const rd = regionScore(a) - regionScore(b);
       if(rd !== 0) return rd;
-      return levelScore(b) - levelScore(a);
+      const ld = levelScore(b) - levelScore(a);
+      if(ld !== 0) return ld;
+      return (a.name.split(' ')[0]).localeCompare(b.name.split(' ')[0]);
     });
 
   if(!eligible.length) { showMsg('Athlete Invitation', 'All eligible athletes are already registered.'); return; }
