@@ -375,7 +375,7 @@ const MIZE_MESSAGES = (function() {
     // Priority 5: no package at all
     const discountLine = discountCoupon
       ? '\n\nUse coupon code ' + discountCoupon + ' at checkout to save $50 ($' + discountedFee + ' total).'
-      : '\n\nOr $125 when using a voucher from the Goalie Performance Package ($750 for 6 sessions).';
+      : '\n\nYou can also purchase a Goalie Performance Package that includes 6 goalie group sessions within 15 weeks for $750. This would bring down the cost per session to $125.';
     return { owesSessionFee: true, text: signupVerb + discountLine };
   }
 
@@ -410,7 +410,7 @@ const MIZE_MESSAGES = (function() {
     });
 
     const pkgOfferLine = (showPkgOffer && !hasPackage && !hasFreePackage)
-      ? '\n\nYou can also buy a Goalie Performance Package for six goalie sessions within 15 weeks for a total of $750 which brings down the fee per session to $125.'
+      ? '\n\nYou can also purchase a Goalie Performance Package that includes 6 goalie group sessions within 15 weeks for $750. This would bring down the cost per session to $125.'
       : '';
 
     const pLine  = pFee > 0 ? '\n\nThere is an additional pool fee of $' + pFee + ' that goes to the host family for providing their pool for this session.' : '';
