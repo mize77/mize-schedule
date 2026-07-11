@@ -538,20 +538,22 @@ function showInvite(ev) {
   if(ev.kind !== 'group') { showMsg('Athlete Invitation', buildConfirm(ev)); return; }
 
   const athletes = data.athletes || [];
+  const pools = data.pools || [];
   const prog = ev.prog, occ = ev.occ;
   const attending = new Set(occ.attendees || []);
-  const sessionRegion = occ.location || prog.location || '';
 
-  // Region rank — local athletes first
+  // Find pool and its region priorities
+  const location = occ.location || prog.location || '';
+  const pool = pools.find(p => p.name && location && p.name.toLowerCase() === location.toLowerCase());
+  const poolRegions = pool?.regions || (pool?.region ? [pool.region] : []);
+
+  // Region score: primary=0, secondary=1, tertiary=2, no match=99
   function regionScore(a) {
-    if(!a.region) return 3;
-    const sr = sessionRegion.toLowerCase();
-    const ar = (a.region||'').toLowerCase();
-    if(sr.includes(ar) || ar.includes(sr.split(' ')[0])) return 0; // local
-    if(ar.includes('oc') || ar.includes('orange')) return 1;
-    return 2;
+    if(!a.region) return 99;
+    const idx = poolRegions.indexOf(a.region);
+    return idx >= 0 ? idx : 99;
   }
-  // Level rank
+
   const LRANK = {'Elite':5,'High Performance':4,'Advanced':3,'Intermediate':2,'Beginner':1};
   function levelScore(a) { return LRANK[a.level] || 0; }
 
@@ -560,23 +562,22 @@ function showInvite(ev) {
     .sort((a,b) => {
       const rd = regionScore(a) - regionScore(b);
       if(rd !== 0) return rd;
-      return levelScore(b) - levelScore(a); // higher level first within region
+      return levelScore(b) - levelScore(a);
     });
 
   if(!eligible.length) { showMsg('Athlete Invitation', 'All eligible athletes are already registered.'); return; }
 
-  // Build the athlete selector view
+  const regionLabels = ['Primary Region','Secondary Region','Tertiary Region'];
   let html = '<div style="margin-bottom:12px;font-size:11px;color:#555;text-transform:uppercase;letter-spacing:0.06em">Select athlete to invite</div>';
-  let lastRegion = null;
+  let lastScore = -1;
   eligible.forEach((a, i) => {
     const rs = regionScore(a);
-    const regionLabel = rs === 0 ? '📍 Local' : rs === 1 ? 'OC' : (a.region || 'Other');
-    if(regionLabel !== lastRegion) {
-      html += '<div style="font-size:10px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:0.06em;margin:10px 0 5px">' + regionLabel + '</div>';
-      lastRegion = regionLabel;
+    if(rs !== lastScore) {
+      const label = rs < 3 ? (poolRegions[rs] + (rs===0?' · Primary':rs===1?' · Secondary':' · Tertiary'))
+        : (rs === 99 ? 'Other Regions' : 'Other');
+      html += '<div style="font-size:10px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:0.06em;margin:10px 0 5px">' + label + '</div>';
+      lastScore = rs;
     }
-    const nm = (a.nickname || a.name.split(' ')[0]);
-    const parent = a.parentNickname || (a.parentName||'').split(' ')[0];
     const sub = [a.level, a.region].filter(Boolean).join(' · ');
     html += '<button data-invite-idx="' + i + '" style="width:100%;text-align:left;padding:9px 11px;'
       + 'border-radius:9px;border:1px solid #2a2f3a;background:#1a1f27;margin-bottom:5px;cursor:pointer">'
@@ -591,7 +592,6 @@ function showInvite(ev) {
   document.getElementById('copyBtn').onclick = copyMsg;
   document.getElementById('modal').style.display = 'flex';
 
-  // Store eligible list for click handler
   window._inviteEligible = eligible;
   window._inviteEv = ev;
 }
