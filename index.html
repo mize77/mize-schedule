@@ -149,42 +149,28 @@ body{background:#0b0f14;color:#e8edf2;font-family:-apple-system,BlinkMacSystemFo
 <script>
 const GIST_URL='https://gist.githubusercontent.com/mize77/57fe1173e91ff569c66fb4af80287def/raw/mize_schedule.json';
 const NOTES_GIST_ID='57fe1173e91ff569c66fb4af80287def';
-let NOTES_GIST_TOKEN='';
-// Fetch token from local helper (avoids storing token in published code)
-fetch('http://127.0.0.1:27371/gist_token').then(r=>r.text()).then(t=>{NOTES_GIST_TOKEN=t.trim();}).catch(()=>{});
-const HS=8,HE=22,SH=28,SLOTS=(HE-HS)*2;
-let data=null,tab='list',curMsg='';
-let phoneNotes=[];  // notes array synced with Gist
+const HELPER_URL='http://127.0.0.1:27371';
 
 async function fetchNotesFromGist(){
   try{
-    const res=await fetch(`https://api.github.com/gists/${NOTES_GIST_ID}`,{
-      headers:{'Authorization':`token ${NOTES_GIST_TOKEN}`,'Accept':'application/vnd.github+json'}
+    const r=await fetch(HELPER_URL+'/',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'get_notes'})
     });
-    const g=await res.json();
-    const f=g.files&&g.files['mize_schedule.json'];
-    if(!f)return[];
-    const data=JSON.parse(f.content||'{}');
-    return data.notes||[];
+    const d=await r.json();
+    return d.ok ? (d.notes||[]) : null;
   }catch(e){return null;}
 }
 
 async function pushNotesToGist(notesList){
   try{
-    // Read current mize_schedule.json, update notes key, write back
-    const res=await fetch(`https://api.github.com/gists/${NOTES_GIST_ID}`,{
-      headers:{'Authorization':`token ${NOTES_GIST_TOKEN}`,'Accept':'application/vnd.github+json'}
-    });
-    const g=await res.json();
-    const current=JSON.parse(g.files?.['mize_schedule.json']?.content||'{}');
-    current.notes=notesList;
-    await fetch(`https://api.github.com/gists/${NOTES_GIST_ID}`,{
-      method:'PATCH',
-      headers:{'Authorization':`token ${NOTES_GIST_TOKEN}`,'Content-Type':'application/json'},
-      body:JSON.stringify({files:{'mize_schedule.json':{content:JSON.stringify(current)}}})
+    await fetch(HELPER_URL+'/',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'save_notes',notes:notesList})
     });
   }catch(e){console.warn('notes push failed',e);}
 }
+
 
 function noteTs(ts){
   const d=new Date(ts);
