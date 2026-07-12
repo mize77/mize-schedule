@@ -218,6 +218,7 @@ const MIZE_MESSAGES = (function() {
     // Pool fee — skipped for pool owner/host (they don't pay their own pool fee)
     if(pf > 0 && !isPoolOwner) {
       openFees.push({ label: 'pool fee', amount: pf });
+      el5 = 'There is a $' + pf + ' pool fee for the host family to provide the venue in good condition for our goalie training session.';
     }
 
     // Element 8 — single payment paragraph covering all open fees
@@ -248,7 +249,7 @@ const MIZE_MESSAGES = (function() {
     const el10 = 'I look forward seeing you there. Best greetings, MIZE';
 
     // ── Assemble — blank lines between non-empty elements ─────────────────
-    const elements = [el1, el2, el4, el8].filter(Boolean);
+    const elements = [el1, el2, el4, el5, el8].filter(Boolean);
     let body = elements.join('\n\n');
     if(el9) body += el9;           // pool note already starts with \n\n
     body += '\n\n' + el10;
