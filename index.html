@@ -263,11 +263,16 @@ function parentName(a){
 async function loadData(){
   try{
     const r=await fetch(GIST_URL+'?t='+Date.now());
-    data=await r.json();
+    const text=await r.text();
+    if(!text||text.trim()==='{}'){
+      document.getElementById('content').innerHTML='<div class="empty">Schedule data is empty. Open GSM and save any change to push schedule.</div>';
+      return;
+    }
+    data=JSON.parse(text);
     document.getElementById('last-upd').textContent='Updated '+new Date(data.savedAt||Date.now()).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
     render();
   }catch(e){
-    document.getElementById('content').innerHTML='<div class="empty">Could not load. Check connection and refresh.</div>';
+    document.getElementById('content').innerHTML='<div class="empty">Could not load. Check connection and refresh.<br><small>'+e.message+'</small></div>';
   }
 }
 
