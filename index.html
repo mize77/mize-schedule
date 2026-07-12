@@ -162,18 +162,26 @@ async function fetchNotesFromGist(){
       headers:{'Authorization':`token ${NOTES_GIST_TOKEN}`,'Accept':'application/vnd.github+json'}
     });
     const g=await res.json();
-    const f=g.files&&g.files['mize_notes.json'];
+    const f=g.files&&g.files['mize_schedule.json'];
     if(!f)return[];
-    return JSON.parse(f.content||'[]');
+    const data=JSON.parse(f.content||'{}');
+    return data.notes||[];
   }catch(e){return null;}
 }
 
 async function pushNotesToGist(notesList){
   try{
+    // Read current mize_schedule.json, update notes key, write back
+    const res=await fetch(`https://api.github.com/gists/${NOTES_GIST_ID}`,{
+      headers:{'Authorization':`token ${NOTES_GIST_TOKEN}`,'Accept':'application/vnd.github+json'}
+    });
+    const g=await res.json();
+    const current=JSON.parse(g.files?.['mize_schedule.json']?.content||'{}');
+    current.notes=notesList;
     await fetch(`https://api.github.com/gists/${NOTES_GIST_ID}`,{
       method:'PATCH',
       headers:{'Authorization':`token ${NOTES_GIST_TOKEN}`,'Content-Type':'application/json'},
-      body:JSON.stringify({files:{'mize_notes.json':{content:JSON.stringify(notesList)}}})
+      body:JSON.stringify({files:{'mize_schedule.json':{content:JSON.stringify(current)}}})
     });
   }catch(e){console.warn('notes push failed',e);}
 }
@@ -190,7 +198,7 @@ async function loadNotesTab(){
     document.getElementById('content').innerHTML='<div class="empty">Could not load notes. Check connection.</div>';
     return;
   }
-  phoneNotes=fetched.filter(n=>!n.done).sort((a,b)=>b.ts-a.ts);
+  phoneNotes=fetched.sort((a,b)=>b.ts-a.ts);
   renderNotes();
 }
 
@@ -207,11 +215,12 @@ function renderNotes(){
     html+='<div class="empty">No notes yet. Write one above — it will sync to GSM.</div>';
   } else {
     phoneNotes.forEach((n,i)=>{
-      html+=`<div class="note-card" id="note-${n.id}">
+      const isDone = !!n.done;
+      html+=`<div class="note-card" id="note-${n.id}" style="${isDone?'opacity:0.5;':''}">
         <div class="note-text">${n.text.replace(/</g,'&lt;')}</div>
-        <div class="note-meta">${n.source==='gsm'?'From GSM · ':''}${noteTs(n.ts)}</div>
+        <div class="note-meta">${n.source==='gsm'?'From GSM · ':''}${noteTs(n.ts)}${isDone?' · Pending GSM sync':''}</div>
         <div class="note-btns">
-          <button class="nbtn done-btn" onclick="markNoteDone('${n.id}')">✓ Done — delete after sync</button>
+          ${!isDone?`<button class="nbtn done-btn" onclick="markNoteDone('${n.id}')">✓ Done</button>`:''}
           <button class="nbtn del-btn" onclick="deletePhoneNote('${n.id}')">🗑</button>
         </div>
       </div>`;
@@ -234,13 +243,12 @@ async function addPhoneNote(){
 }
 
 async function markNoteDone(id){
-  // Mark done = auto-delete from phone after sync to GSM
-  phoneNotes=phoneNotes.filter(n=>n.id!==id);
+  // Mark as done — GSM will show it and can then delete it from its side
+  phoneNotes=phoneNotes.map(n=>n.id===id?{...n,done:true}:n);
   renderNotes();
-  // Push remaining (without the done note) so GSM sees it's gone
   await pushNotesToGist(phoneNotes);
   const msg=document.getElementById('notes-sync-msg');
-  if(msg){msg.textContent='✓ Deleted after sync';setTimeout(()=>{if(msg)msg.textContent='';},2000);}
+  if(msg){msg.textContent='✓ Marked done — will sync to GSM';setTimeout(()=>{if(msg)msg.textContent='';},2500);}
 }
 
 async function deletePhoneNote(id){
