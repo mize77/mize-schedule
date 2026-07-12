@@ -153,22 +153,21 @@ const HELPER_URL='http://127.0.0.1:27371';
 
 async function fetchNotesFromGist(){
   try{
-    const r=await fetch(HELPER_URL+'/',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({action:'get_notes'})
-    });
+    // Read from public Gist raw URL (HTTPS — works on iPhone)
+    const r=await fetch('https://gist.githubusercontent.com/mize77/'+NOTES_GIST_ID+'/raw/mize_schedule.json?t='+Date.now());
     const d=await r.json();
-    return d.ok ? (d.notes||[]) : null;
+    return d.notes||[];
   }catch(e){return null;}
 }
 
 async function pushNotesToGist(notesList){
   try{
+    // Write through local helper (HTTP — works on same WiFi as Mac)
     await fetch(HELPER_URL+'/',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({action:'save_notes',notes:notesList})
     });
-  }catch(e){console.warn('notes push failed',e);}
+  }catch(e){console.warn('notes push failed — not on local network?',e);}
 }
 
 
