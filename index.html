@@ -149,12 +149,13 @@ body{background:#0b0f14;color:#e8edf2;font-family:-apple-system,BlinkMacSystemFo
 <script>
 const GIST_URL='https://gist.githubusercontent.com/mize77/9fac6be0a44e568a5145853dd9092060/raw/mize_schedule.json';
 const NOTES_GIST_ID='9fac6be0a44e568a5145853dd9092060';
+const SCHEDULE_URL='https://gist.githubusercontent.com/mize77/9fac6be0a44e568a5145853dd9092060/raw/mize_schedule.json';
 const HELPER_URL='http://127.0.0.1:27371';
 
 async function fetchNotesFromGist(){
   try{
-    // Read from public Gist raw URL (HTTPS — works on iPhone)
-    const r=await fetch('https://gist.githubusercontent.com/mize77/'+NOTES_GIST_ID+'/raw/mize_schedule.json?t='+Date.now());
+    // Read notes from public Gist raw URL — works on cellular
+    const r=await fetch(SCHEDULE_URL+'?t='+Date.now());
     const d=await r.json();
     return d.notes||[];
   }catch(e){return null;}
@@ -162,13 +163,18 @@ async function fetchNotesFromGist(){
 
 async function pushNotesToGist(notesList){
   try{
-    // Write through local helper (HTTP — works on same WiFi as Mac)
+    // Try helper first (WiFi) — silently skip if on cellular
     await fetch(HELPER_URL+'/',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({action:'save_notes',notes:notesList})
     });
-  }catch(e){console.warn('notes push failed — not on local network?',e);}
+  }catch(e){
+    // Not on WiFi — show message but don't crash
+    const msg=document.getElementById('notes-sync-msg');
+    if(msg){msg.textContent='⚠ Connect to home WiFi to sync notes';setTimeout(()=>{if(msg)msg.textContent='';},4000);}
+  }
 }
+
 
 
 function noteTs(ts){
