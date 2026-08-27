@@ -11,7 +11,7 @@
 //    api.github.com     → never touched (carries the auth header)
 // ────────────────────────────────────────────────────────────────
 
-const CACHE_VERSION = 'mize-v2';
+const CACHE_VERSION = 'mize-v3';
 const SHELL_CACHE   = CACHE_VERSION + '-shell';
 const DATA_CACHE    = CACHE_VERSION + '-data';
 
@@ -78,7 +78,26 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Same-origin shell: cache-first, revalidate in the background.
+  // The HTML document itself: network-first, so a fresh deploy is picked
+  // up the moment you open the app online. Cache-first here meant a new
+  // build only appeared on the SECOND launch after a deploy.
+  if (req.mode === 'navigate' || req.destination === 'document') {
+    event.respondWith((async () => {
+      const cache = await caches.open(SHELL_CACHE);
+      try {
+        const fresh = await fetch(req);
+        if (fresh && fresh.ok) cache.put('./index.html', fresh.clone());
+        return fresh;
+      } catch (err) {
+        const hit = await cache.match('./index.html', { ignoreSearch: true });
+        return hit || new Response('Offline', { status: 503 });
+      }
+    })());
+    return;
+  }
+
+  // Everything else same-origin (icons, messages.js): cache-first,
+  // revalidated in the background.
   if (url.origin === self.location.origin) {
     event.respondWith((async () => {
       const cache = await caches.open(SHELL_CACHE);
