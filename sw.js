@@ -11,7 +11,7 @@
 //    api.github.com     → never touched (carries the auth header)
 // ────────────────────────────────────────────────────────────────
 
-const CACHE_VERSION = 'mize-v1';
+const CACHE_VERSION = 'mize-v2';
 const SHELL_CACHE   = CACHE_VERSION + '-shell';
 const DATA_CACHE    = CACHE_VERSION + '-data';
 
