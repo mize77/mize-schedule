@@ -344,20 +344,53 @@ async function fetchNotesFromGist(){
   }catch(e){return null;}
 }
 
-// Merge what GSM has with what this phone did. Local wins when it is
-// newer; locally deleted notes are tombstoned so a refetch can't
-// resurrect them before the helper has drained the delete.
+// How long a locally-created note is trusted to still be in flight before
+// we accept that the Mac has dealt with it.
+const LOCAL_ACK_GRACE_MS = 15*60*1000;
+
+// Note ids this phone still has an unsent change for.
+function pendingNoteIds(){
+  const ids={};
+  outbox().forEach(e=>{ if(e && e.type==='note' && e.note && e.note.id) ids[e.note.id]=1; });
+  return ids;
+}
+
+// Local notes are a PENDING-WRITE CACHE, not a second source of truth.
+// The old rule ("local wins when its ts is newer or equal") broke on the
+// commonest case of all: ticking a note off in GSM does not change its
+// ts, so local tied, local won, and local's done:false overwrote the
+// Mac's done:true — the note stayed open on the phone forever.
+// Now the Mac wins for anything it already knows about, unless this
+// phone is still holding an unsent change for that note.
 function mergeNotes(remote,local){
+  const pending=pendingNoteIds();
   const byId={};
   (remote||[]).forEach(n=>{if(n&&n.id)byId[n.id]=n;});
   (local||[]).forEach(n=>{
     if(!n||!n.id)return;
-    const r=byId[n.id];
-    byId[n.id]= r ? ((n.ts||0)>=(r.ts||0) ? Object.assign({},r,n) : r) : n;
+    if(byId[n.id] && !pending[n.id]) return;      // the Mac's copy is authoritative
+    byId[n.id]= byId[n.id] ? Object.assign({},byId[n.id],n) : n;
   });
   return Object.keys(byId).map(k=>byId[k])
     .filter(n=>!n._deleted)
     .sort((a,b)=>(b.ts||0)-(a.ts||0));
+}
+
+// Drop local copies the Mac has taken ownership of, so the cache cannot
+// keep resurrecting notes that were completed or deleted over there.
+function reconcileLocalNotes(remote){
+  const pending=pendingNoteIds();
+  const remoteById={};
+  (remote||[]).forEach(n=>{ if(n&&n.id) remoteById[n.id]=1; });
+  const now=Date.now();
+  const kept=localNotes().filter(n=>{
+    if(!n||!n.id) return false;
+    if(pending[n.id]) return true;                       // not sent yet
+    if(remoteById[n.id]) return false;                   // Mac has it — its version wins
+    return (now-(n.ts||0)) < LOCAL_ACK_GRACE_MS;         // sent, not drained yet
+  });
+  lsSet(LS_NOTES_LOCAL, kept);
+  return kept;
 }
 
 function localNotes(){const n=lsGet(LS_NOTES_LOCAL,[]);return Array.isArray(n)?n:[];}
@@ -388,7 +421,8 @@ async function loadNotesTab(){
     if(msg){msg.textContent='⚠ Offline — showing notes stored on this phone';}
     return;
   }
-  phoneNotes=mergeNotes(fetched,localNotes());
+  const local=reconcileLocalNotes(fetched);
+  phoneNotes=mergeNotes(fetched,local);
   renderNotes();
 }
 
@@ -404,10 +438,13 @@ function renderNotes(){
     +'<textarea class="note-textarea" id="note-input" placeholder="Write a note to sync with GSM..." rows="3"></textarea>'
     +'<button class="note-add-btn" onclick="addPhoneNote()">+ Add Note</button>'
     +'</div>';
-  if(!phoneNotes.length){
-    html+='<div class="empty">No notes yet. Write one above — it will sync to GSM.</div>';
+  // Completed notes live on in GSM's Completed section for 7 days; there
+  // is no reason to carry them around on the phone.
+  const openNotes = phoneNotes.filter(n => !n.done);
+  if(!openNotes.length){
+    html+='<div class="empty">No open notes. Write one above — it will sync to GSM.</div>';
   } else {
-    phoneNotes.forEach((n,i)=>{
+    openNotes.forEach((n,i)=>{
       const isDone = !!n.done;
       html+=`<div class="note-card" id="note-${n.id}" style="${isDone?'opacity:0.5;':''}">
         <div class="note-text">${escHtml(n.text||'')}</div>
@@ -450,8 +487,8 @@ async function markNoteDone(id){
   upsertLocalNote(upd);
   phoneNotes=mergeNotes(lsGet(LS_NOTES_REMOTE,[]),localNotes());
   renderNotes();
-  queueOutbox({id:uid('ob'),type:'note',op:'done',ts:Date.now(),note:{id:id,done:true}});
-  noteSyncMsg('✓ Marked done — syncing to GSM');
+  queueOutbox({id:uid('ob'),type:'note',op:'done',ts:Date.now(),note:{id:id,done:true,doneAt:Date.now()}});
+  noteSyncMsg('✓ Done — kept in GSM history for 7 days');
 }
 
 async function deletePhoneNote(id){
@@ -1444,7 +1481,7 @@ async function forceUpdate(){
 // ════════════════════════════════════════════════════════════════
 //  SERVICE WORKER
 // ════════════════════════════════════════════════════════════════
-const APP_BUILD='2026-08-27c';
+const APP_BUILD='2026-08-27e';
 
 function registerSW(){
   if(!('serviceWorker' in navigator))return;
