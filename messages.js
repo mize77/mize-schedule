@@ -487,7 +487,15 @@ const MIZE_MESSAGES = (function() {
       ? '\n\nJoin the Zoom meeting here:\n' + meeting.zoomJoinUrl
         + (meeting.zoomPasscode ? '\nPasscode: ' + meeting.zoomPasscode : '')
       : '';
-    return 'Hi ' + parent + ',\n\nThis is to confirm our upcoming ' + tl
+    // Zoom meetings carry a subject: the typed override, else the first
+    // line of the Topics field. Quoted so it matches the Zoom invitation.
+    const subject = meeting.meetingType === 'Zoom Meeting'
+      ? ((meeting.zoomTopic || '').trim()
+         || String(meeting.topics || '').split('\n').map(t=>t.trim()).filter(Boolean)[0]
+         || '')
+      : '';
+    const subjectStr = subject ? ' "' + subject + '"' : '';
+    return 'Hi ' + parent + ',\n\nThis is to confirm our upcoming ' + tl + subjectStr
       + ' on ' + fmtDate(meeting.date) + tsStr + locStr + '.'
       + topicsStr + zoomLine + feeLine
       + '\n\nPlease let me know if this works for you or if you need to reschedule.\n\nBest greetings, MIZE';
