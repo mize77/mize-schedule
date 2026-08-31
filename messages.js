@@ -170,7 +170,6 @@ const MIZE_MESSAGES = (function() {
       isPoolOwner,      // true when the confirmed athlete owns this pool
       poolAccessNotes,  // from pool.accessNotes in GSM pools data
       athleteRegion, athleteState,
-      zoomJoinUrl, zoomPasscode,   // set when a Zoom meeting was created for this session
     } = opts;
 
     // ── Element 1: Personal greeting ──────────────────────────────────────
@@ -246,18 +245,11 @@ const MIZE_MESSAGES = (function() {
       return poolNote(poolName || '');  // legacy fallback
     })();
 
-    // ── Element 2b: Zoom join link ────────────────────────────────────────
-    // Present only when a Zoom meeting has been created for this session in GSM.
-    const el2b = zoomJoinUrl
-      ? 'We will meet by Zoom. You can join here:\n' + zoomJoinUrl
-        + (zoomPasscode ? '\nPasscode: ' + zoomPasscode : '')
-      : '';
-
     // ── Element 10: Sign-off ──────────────────────────────────────────────
     const el10 = 'I look forward seeing you there. Best greetings, MIZE';
 
     // ── Assemble — blank lines between non-empty elements ─────────────────
-    const elements = [el1, el2, el2b, el4, el5, el8].filter(Boolean);
+    const elements = [el1, el2, el4, el5, el8].filter(Boolean);
     let body = elements.join('\n\n');
     if(el9) body += el9;           // pool note already starts with \n\n
     body += '\n\n' + el10;
@@ -291,8 +283,6 @@ const MIZE_MESSAGES = (function() {
       isPoolOwner,
       poolAccessNotes: poolRec?.accessNotes || '',
       athleteRegion, athleteState,
-      zoomJoinUrl:  session.zoomJoinUrl  || '',
-      zoomPasscode: session.zoomPasscode || '',
     });
   }
 
@@ -483,28 +473,16 @@ const MIZE_MESSAGES = (function() {
     const topicsStr = meeting.topics
       ? '\n\nTopics we will cover:\n' + meeting.topics.split(/[\n,]+/).map(t=>t.trim()).filter(Boolean).map(t=>'- '+t).join('\n')
       : '';
-    const zoomLine = meeting.zoomJoinUrl
-      ? '\n\nJoin the Zoom meeting here:\n' + meeting.zoomJoinUrl
-        + (meeting.zoomPasscode ? '\nPasscode: ' + meeting.zoomPasscode : '')
-      : '';
-    // Zoom meetings carry a subject: the typed override, else the first
-    // line of the Topics field. Quoted so it matches the Zoom invitation.
-    const subject = meeting.meetingType === 'Zoom Meeting'
-      ? ((meeting.zoomTopic || '').trim()
-         || String(meeting.topics || '').split('\n').map(t=>t.trim()).filter(Boolean)[0]
-         || '')
-      : '';
-    const subjectStr = subject ? ' "' + subject + '"' : '';
-    return 'Hi ' + parent + ',\n\nThis is to confirm our upcoming ' + tl + subjectStr
+    return 'Hi ' + parent + ',\n\nThis is to confirm our upcoming ' + tl
       + ' on ' + fmtDate(meeting.date) + tsStr + locStr + '.'
-      + topicsStr + zoomLine + feeLine
+      + topicsStr + feeLine
       + '\n\nPlease let me know if this works for you or if you need to reschedule.\n\nBest greetings, MIZE';
   }
 
   // ══════════════════════════════════════════════════════════════════════════
   //  COACH CONFIRMATION
   // ══════════════════════════════════════════════════════════════════════════
-  function coachConfirm(coachName, eventName, date, startTime, endTime, location, address, isRemote, coachNickname, zoomJoinUrl) {
+  function coachConfirm(coachName, eventName, date, startTime, endTime, location, address, isRemote, coachNickname) {
     const locFull = [location, address].filter(Boolean).join(', ');
     const ts = timeRange(startTime, endTime, '90 min');
     return 'Hi ' + preferredName(coachName, coachNickname) + ', this is to confirm your coaching assignment'
@@ -512,7 +490,6 @@ const MIZE_MESSAGES = (function() {
       + ' on ' + fmtDate(date)
       + (ts ? ' ' + ts : '')
       + (isRemote ? ' via Zoom.' : (locFull ? ' at ' + locFull + '.' : '.'))
-      + (isRemote && zoomJoinUrl ? '\n\nJoin here:\n' + zoomJoinUrl : '')
       + (!isRemote ? '\n\nPlease make sure to arrive 10 minutes early and help with clean-up at the end of the session.' : '')
       + '\n\nThank you!\nMIZE';
   }
