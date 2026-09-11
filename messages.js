@@ -166,6 +166,7 @@ const MIZE_MESSAGES = (function() {
       poolName, poolAddress,
       sessionFee, mileageFee, poolFee,
       isPaid,
+      usedPackage,     // true when a package session covers the session fee
       showPkgOffer,
       isPoolOwner,      // true when the confirmed athlete owns this pool
       poolAccessNotes,  // from pool.accessNotes in GSM pools data
@@ -182,46 +183,51 @@ const MIZE_MESSAGES = (function() {
     if(ts && needsTimezoneClarifier(athleteState, athleteRegion)) ts += ' (Pacific Time)';
     const tsStr  = ts ? ' ' + ts : '';
     const locStr = poolName ? ' at ' + poolName + (poolAddress ? ' located at ' + poolAddress : '') : '';
-    const el2 = 'I am confirming the ' + eventName + ' for ' + goalie + ' ' + dayStr + tsStr + locStr + '.';
 
     // ── Elements 3–6 & 8: Fees ────────────────────────────────────────────
-    // We collect each open fee as { label, amount } so element 8 can list
-    // them individually and then add the combined total.
     const sf = Number(sessionFee||0);
     const mf = Number(mileageFee||0);
     const pf = Number(poolFee||0);
 
-    let el3 = '';   // session fee line
+    // el2 fee mention: only session fee + mileage (NOT pool fee — pool fee has its own paragraph el5)
+    // Skipped entirely when paid or when package covers it
+    const sessionCovered = isPaid || usedPackage;
+    let feeStr = '';
+    if(!sessionCovered && sf > 0) {
+      feeStr = ' The session fee is $' + sf + (mf > 0 ? ' plus a $' + mf + ' mileage fee' : '') + '.';
+    } else if(!sessionCovered && mf > 0) {
+      feeStr = ' There is a $' + mf + ' mileage fee for this session.';
+    } else if(usedPackage) {
+      feeStr = ' This session is covered by one of the remaining sessions of the Goalie Performance Package.';
+    }
+    const el2 = 'I am confirming the ' + eventName + ' for ' + goalie + ' ' + dayStr + tsStr + locStr + '.' + feeStr;
+
     let el4 = '';   // package offer line
     let el5 = '';   // pool fee line
-    let el6 = '';   // mileage fee line
     let el8 = '';   // payment line
 
     const openFees = []; // { label, amount } for payment itemization
 
-    if(!isPaid && sf > 0) {
-      if(mf > 0) {
-        openFees.push({ label: 'session fee', amount: sf });
-        openFees.push({ label: 'mileage fee', amount: mf });
-      } else {
-        openFees.push({ label: 'session fee', amount: sf });
-      }
-    } else if(!isPaid && mf > 0) {
+    // Session fee and mileage — only owed if not paid and not covered by package
+    if(!sessionCovered && sf > 0) {
+      openFees.push({ label: 'session fee', amount: sf });
+      if(mf > 0) openFees.push({ label: 'mileage fee', amount: mf });
+    } else if(!sessionCovered && mf > 0) {
       openFees.push({ label: 'mileage fee', amount: mf });
     }
 
-    // Element 4 — package offer (only if unpaid AND flag checked)
-    if(!isPaid && showPkgOffer) {
+    // Element 4 — package offer (only if unpaid AND flag checked AND no package used)
+    if(!isPaid && !usedPackage && showPkgOffer) {
       el4 = 'If ' + goalie + ' is planning to join consistently in my goalie sessions I would like to offer you the Goalie Performance Package with 6 group sessions for $750 which brings down the fee per session to just $125.';
     }
 
-    // Pool fee — skipped for pool owner/host (they don't pay their own pool fee)
+    // Pool fee — skipped for pool owner/host
     if(pf > 0 && !isPoolOwner) {
       openFees.push({ label: 'pool fee', amount: pf });
       el5 = 'There is a $' + pf + ' pool fee for the host family to provide the venue in good condition for our goalie training session.';
     }
 
-    // Element 8 — single payment paragraph covering all open fees
+    // Element 8 — payment paragraph covering all open fees
     if(openFees.length > 0) {
       const total = openFees.reduce((s, f) => s + f.amount, 0);
       let itemized;
@@ -234,11 +240,7 @@ const MIZE_MESSAGES = (function() {
     }
 
     // ── Element 9: Pool access notes ──────────────────────────────────────
-    // Uses the pool's accessNotes field (set in GSM Pools tab).
-    // Skipped entirely if the athlete is the owner of this pool —
-    // they already know how to get in.
-    // Falls back to the legacy hardcoded poolNote() for pools that
-    // haven't been migrated to the new accessNotes field yet.
+    // Skipped for the pool owner — they don't need access instructions to their own pool.
     const el9 = (() => {
       if(isPoolOwner) return '';
       if(poolAccessNotes) return '\n\n' + poolAccessNotes.trim();
@@ -248,10 +250,10 @@ const MIZE_MESSAGES = (function() {
     // ── Element 10: Sign-off ──────────────────────────────────────────────
     const el10 = 'I look forward seeing you there. Best greetings, MIZE';
 
-    // ── Assemble — blank lines between non-empty elements ─────────────────
+    // ── Assemble ──────────────────────────────────────────────────────────
     const elements = [el1, el2, el4, el5, el8].filter(Boolean);
     let body = elements.join('\n\n');
-    if(el9) body += el9;           // pool note already starts with \n\n
+    if(el9) body += el9;
     body += '\n\n' + el10;
 
     return body;
@@ -262,23 +264,53 @@ const MIZE_MESSAGES = (function() {
     const goalie   = preferredName(athleteName, athleteNickname);
     const greeting = recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete);
     const isSemi   = (session.format||'').startsWith('Semi');
-    const isPaid   = isSemi ? (isAthlete1 !== false ? !!session.paid : !!session.paid2) : !!session.paid;
-    // Resolve pool record from pools list using pool name match
-    const poolRec  = (pools||[]).find(p => p.name && session.poolName && p.name.toLowerCase() === session.poolName.toLowerCase());
+    const isGroup  = (session.format||'').startsWith('Small Goalie Group');
+
+    // For Small Goalie Group, find the per-athlete fee row
+    let sessionFee  = Number(session.fee||0);
+    let mileageFee  = Number(session.mileageFee||0);
+    let poolFee     = Number(session.poolFee||0);
+    let isPaid      = !!session.paid;
+
+    if(isGroup && session.groupAthletes) {
+      const row = session.groupAthletes.find(r => {
+        const a = r.id ? (athleteName === '') : false;
+        // Match by athlete name since we receive athleteName not id here
+        const found = (pools||[]).find(p=>p.name===athleteName); // unused, just matching pattern
+        return r.name === athleteName || r.id === session.groupAthletes.find(x=>x.name===athleteName)?.id;
+      }) || session.groupAthletes.find(r=>r.name===athleteName) || session.groupAthletes[0];
+      if(row) {
+        sessionFee = Number(row.fee||0);
+        mileageFee = Number(row.mileageFee||0);
+        poolFee    = Number(row.poolFee||0);
+        isPaid     = !!row.paid;
+      }
+    } else if(isSemi) {
+      isPaid = isAthlete1 !== false ? !!session.paid : !!session.paid2;
+      if(!isAthlete1) {
+        sessionFee = Number(session.fee2||session.fee||0);
+        mileageFee = Number(session.mileageFee2||session.mileageFee||0);
+        poolFee    = Number(session.poolFee2||session.poolFee||0);
+      }
+    }
+
+    const poolRec     = (pools||[]).find(p => p.name && session.poolName && p.name.toLowerCase() === session.poolName.toLowerCase());
     const isPoolOwner = !!(poolRec && athletePoolId && poolRec.id === athletePoolId);
+
     return buildConfirmation({
       greeting, goalie,
-      eventName:      session.type || 'Private Session',
+      eventName:      isGroup ? 'Goalie Group Session' : (session.type || 'Private Session'),
       dateStr:        session.date,
       startTime:      session.time,
       endTime:        session.endTime,
       sessionLength:  session.length,
       poolName:       session.poolName,
       poolAddress:    session.poolAddress,
-      sessionFee:     Number(session.fee||0),
-      mileageFee:     Number(session.mileageFee||0),
-      poolFee:        Number(session.poolFee||0),
+      sessionFee,
+      mileageFee,
+      poolFee,
       isPaid,
+      usedPackage:    isGroup ? !!(session.groupAthletes?.find(r=>r.name===athleteName)?.usePackage) : false,
       showPkgOffer:   !!showPkgOffer,
       isPoolOwner,
       poolAccessNotes: poolRec?.accessNotes || '',
