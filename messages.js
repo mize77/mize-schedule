@@ -423,7 +423,9 @@ const MIZE_MESSAGES = (function() {
   function groupInvite(prog, occ, athleteName, parentName, hasPackage, packageRemaining, couponCode, showPkgOffer, parentNickname, athleteNickname, newPackageCoupon, hasFreePackage, freePackageCouponCode, messageToParent, messageToAthlete, athleteRegion, athleteState) {
     const goalie   = preferredName(athleteName, athleteNickname);
     const greeting = recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete);
-    const location = occ.location || prog.location || '[Pool Location]';
+    const locationName = occ.location || prog.location || '[Pool Location]';
+    const locationAddr = occ.address  || prog.address  || '';
+    const location = locationName + (locationAddr ? ', ' + locationAddr : '');
     let ts = timeRange(occ.startTime||prog.startTime, occ.endTime||prog.endTime, '90 min');
     if(ts && needsTimezoneClarifier(athleteState, athleteRegion)) ts += ' (Pacific Time)';
     const tsStr    = ts ? ' ' + ts : '';
@@ -460,7 +462,9 @@ const MIZE_MESSAGES = (function() {
   function groupSpotOpen(prog, occ, athleteName, parentName, hasPackage, packageRemaining, couponCode, parentNickname, athleteNickname, newPackageCoupon, hasFreePackage, freePackageCouponCode, messageToParent, messageToAthlete, athleteRegion, athleteState) {
     const goalie   = preferredName(athleteName, athleteNickname);
     const greeting = recipientGreeting(athleteName, athleteNickname, parentName, parentNickname, messageToParent, messageToAthlete);
-    const location = occ.location || prog.location || '[Pool Location]';
+    const locationName = occ.location || prog.location || '[Pool Location]';
+    const locationAddr = occ.address  || prog.address  || '';
+    const location = locationName + (locationAddr ? ', ' + locationAddr : '');
     let ts = timeRange(occ.startTime||prog.startTime, occ.endTime||prog.endTime, '90 min');
     if(ts && needsTimezoneClarifier(athleteState, athleteRegion)) ts += ' (Pacific Time)';
     const tsStr    = ts ? ' ' + ts : '';
