@@ -310,7 +310,9 @@ const MIZE_MESSAGES = (function() {
       mileageFee,
       poolFee,
       isPaid,
-      usedPackage:    isGroup ? !!(session.groupAthletes?.find(r=>r.name===athleteName)?.usePackage) : false,
+      usedPackage:    isGroup
+        ? !!(session.groupAthletes?.find(r=>r.name===athleteName)?.usePackage)
+        : !!(session.coveredByPackage),
       showPkgOffer:   !!showPkgOffer,
       isPoolOwner,
       poolAccessNotes: poolRec?.accessNotes || '',
